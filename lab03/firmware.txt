@@ -1,0 +1,67 @@
+
+firmware.elf:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+08000040 <main>:
+int main(void)
+{
+ 8000040:	b480      	push	{r7}
+ 8000042:	b085      	sub	sp, #20
+ 8000044:	af00      	add	r7, sp, #0
+	int a = 10, b = 20;
+ 8000046:	230a      	movs	r3, #10
+ 8000048:	60fb      	str	r3, [r7, #12]
+ 800004a:	2314      	movs	r3, #20
+ 800004c:	60bb      	str	r3, [r7, #8]
+	int c = a + b;
+ 800004e:	68fa      	ldr	r2, [r7, #12]
+ 8000050:	68bb      	ldr	r3, [r7, #8]
+ 8000052:	4413      	add	r3, r2
+ 8000054:	607b      	str	r3, [r7, #4]
+	return 0;
+ 8000056:	2300      	movs	r3, #0
+}
+ 8000058:	4618      	mov	r0, r3
+ 800005a:	3714      	adds	r7, #20
+ 800005c:	46bd      	mov	sp, r7
+ 800005e:	bc80      	pop	{r7}
+ 8000060:	4770      	bx	lr
+	...
+
+08000064 <Reset_Handler>:
+ 8000064:	480a      	ldr	r0, [pc, #40]	@ (8000090 <zero_bss_done+0x8>)
+ 8000066:	490b      	ldr	r1, [pc, #44]	@ (8000094 <zero_bss_done+0xc>)
+ 8000068:	4a0b      	ldr	r2, [pc, #44]	@ (8000098 <zero_bss_done+0x10>)
+
+0800006a <copy_data_loop>:
+ 800006a:	4291      	cmp	r1, r2
+ 800006c:	da04      	bge.n	8000078 <copy_data_done>
+ 800006e:	f850 3b04 	ldr.w	r3, [r0], #4
+ 8000072:	f841 3b04 	str.w	r3, [r1], #4
+ 8000076:	e7f8      	b.n	800006a <copy_data_loop>
+
+08000078 <copy_data_done>:
+ 8000078:	4908      	ldr	r1, [pc, #32]	@ (800009c <zero_bss_done+0x14>)
+ 800007a:	4a09      	ldr	r2, [pc, #36]	@ (80000a0 <zero_bss_done+0x18>)
+ 800007c:	2300      	movs	r3, #0
+
+0800007e <zero_bss_loop>:
+ 800007e:	4291      	cmp	r1, r2
+ 8000080:	da02      	bge.n	8000088 <zero_bss_done>
+ 8000082:	f841 3b04 	str.w	r3, [r1], #4
+ 8000086:	e7fa      	b.n	800007e <zero_bss_loop>
+
+08000088 <zero_bss_done>:
+ 8000088:	f7ff ffda 	bl	8000040 <main>
+ 800008c:	e7fe      	b.n	800008c <zero_bss_done+0x4>
+ 800008e:	0000      	.short	0x0000
+ 8000090:	080000a6 	.word	0x080000a6
+ 8000094:	20000000 	.word	0x20000000
+ 8000098:	20000000 	.word	0x20000000
+ 800009c:	20000000 	.word	0x20000000
+ 80000a0:	20000000 	.word	0x20000000
+
+080000a4 <Default_Handler>:
+ 80000a4:	e7fe      	b.n	80000a4 <Default_Handler>

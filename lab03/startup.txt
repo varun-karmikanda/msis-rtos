@@ -1,0 +1,38 @@
+
+startup.o:     file format elf32-littlearm
+
+
+Disassembly of section .text.Reset_Handler:
+
+00000000 <Reset_Handler>:
+   0:	480a      	ldr	r0, [pc, #40]	@ (2c <zero_bss_done+0x8>)
+   2:	490b      	ldr	r1, [pc, #44]	@ (30 <zero_bss_done+0xc>)
+   4:	4a0b      	ldr	r2, [pc, #44]	@ (34 <zero_bss_done+0x10>)
+
+00000006 <copy_data_loop>:
+   6:	4291      	cmp	r1, r2
+   8:	da04      	bge.n	14 <copy_data_done>
+   a:	f850 3b04 	ldr.w	r3, [r0], #4
+   e:	f841 3b04 	str.w	r3, [r1], #4
+  12:	e7f8      	b.n	6 <copy_data_loop>
+
+00000014 <copy_data_done>:
+  14:	4908      	ldr	r1, [pc, #32]	@ (38 <zero_bss_done+0x14>)
+  16:	4a09      	ldr	r2, [pc, #36]	@ (3c <zero_bss_done+0x18>)
+  18:	2300      	movs	r3, #0
+
+0000001a <zero_bss_loop>:
+  1a:	4291      	cmp	r1, r2
+  1c:	da02      	bge.n	24 <zero_bss_done>
+  1e:	f841 3b04 	str.w	r3, [r1], #4
+  22:	e7fa      	b.n	1a <zero_bss_loop>
+
+00000024 <zero_bss_done>:
+  24:	f7ff fffe 	bl	0 <main>
+  28:	e7fe      	b.n	28 <zero_bss_done+0x4>
+	...
+
+Disassembly of section .text.Default_Handler:
+
+00000000 <Default_Handler>:
+   0:	e7fe      	b.n	0 <Default_Handler>
