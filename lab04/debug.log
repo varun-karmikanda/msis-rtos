@@ -1,0 +1,450 @@
+msis@msis-HP-Pro-Tower-400-G9-PCI-Desktop-PC:~/cse/varun/rtos/msis-rtos/lab03$ gdb-multiarch firmware.elf
+GNU gdb (Ubuntu 15.1-1ubuntu1~24.04.1) 15.1
+Copyright (C) 2024 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <http://gnu.org/licenses/gpl.html>
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+Type "show copying" and "show warranty" for details.
+This GDB was configured as "x86_64-linux-gnu".
+Type "show configuration" for configuration details.
+For bug reporting instructions, please see:
+<https://www.gnu.org/software/gdb/bugs/>.
+Find the GDB manual and other documentation resources online at:
+    <http://www.gnu.org/software/gdb/documentation/>.
+
+For help, type "help".
+Type "apropos word" to search for commands related to "word"...
+Reading symbols from firmware.elf...
+(gdb) Quit
+(gdb) target extended-remote :4242
+Remote debugging using :4242
+0x0800008c in Reset_Handler ()
+(gdb) monitor reset-halt
+(gdb) break Reset_Handler
+Breakpoint 1 at 0x800006a
+Note: automatically using hardware breakpoints for read-only addresses.
+(gdb) stepi
+
+Breakpoint 1, 0x0800006a in Reset_Handler ()
+(gdb) display/i $pc
+1: x/i $pc
+=> 0x800006a <Reset_Handler+6>: cmp     r1, r2
+(gdb) display $sp
+2: $sp = (void *) 0x20005000
+(gdb) display/x $r7
+3: /x $r7 = 0x0
+(gdb) display/8xw $sp 
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) display/x $lr
+5: /x $lr = 0xffffffff
+(gdb) display/8xw $sp
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) set disassemble-next-line on
+(gdb) si
+0x0800006c in Reset_Handler ()
+=> 0x0800006c <Reset_Handler+8>:        da04            bge.n   0x8000078 <Reset_Handler+20>
+1: x/i $pc
+=> 0x800006c <Reset_Handler+8>: bge.n   0x8000078 <Reset_Handler+20>
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0xffffffff
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000078 in Reset_Handler ()
+=> 0x08000078 <Reset_Handler+20>:       4908            ldr     r1, [pc, #32]   @ (0x800009c <zero_bss_done+20>)
+1: x/i $pc
+=> 0x8000078 <Reset_Handler+20>:        ldr     r1, [pc, #32]   @ (0x800009c <zero_bss_done+20>)
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0xffffffff
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800007a in Reset_Handler ()
+=> 0x0800007a <Reset_Handler+22>:       4a09            ldr     r2, [pc, #36]   @ (0x80000a0 <zero_bss_done+24>)
+1: x/i $pc
+=> 0x800007a <Reset_Handler+22>:        ldr     r2, [pc, #36]   @ (0x80000a0 <zero_bss_done+24>)
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0xffffffff
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800007c in Reset_Handler ()
+=> 0x0800007c <Reset_Handler+24>:       2300            movs    r3, #0
+1: x/i $pc
+=> 0x800007c <Reset_Handler+24>:        movs    r3, #0
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0xffffffff
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800007e in Reset_Handler ()
+=> 0x0800007e <Reset_Handler+26>:       4291            cmp     r1, r2
+1: x/i $pc
+=> 0x800007e <Reset_Handler+26>:        cmp     r1, r2
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0xffffffff
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000080 in Reset_Handler ()
+=> 0x08000080 <Reset_Handler+28>:       da02            bge.n   0x8000088 <Reset_Handler+36>
+1: x/i $pc
+=> 0x8000080 <Reset_Handler+28>:        bge.n   0x8000088 <Reset_Handler+36>
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0xffffffff
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000088 in Reset_Handler ()
+=> 0x08000088 <Reset_Handler+36>:       f7ff ffda       bl      0x8000040 <main>
+1: x/i $pc
+=> 0x8000088 <Reset_Handler+36>:        bl      0x8000040 <main>
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0xffffffff
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+main () at add_prog.c:2
+2       {
+=> 0x08000040 <main+0>: b480            push    {r7}
+   0x08000042 <main+2>: b085            sub     sp, #20
+   0x08000044 <main+4>: af00            add     r7, sp, #0
+1: x/i $pc
+=> 0x8000040 <main>:    push    {r7}
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000042      2       {
+   0x08000040 <main+0>: b480            push    {r7}
+=> 0x08000042 <main+2>: b085            sub     sp, #20
+   0x08000044 <main+4>: af00            add     r7, sp, #0
+1: x/i $pc
+=> 0x8000042 <main+2>:  sub     sp, #20
+2: $sp = (void *) 0x20004ffc
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20004ffc:     0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004ffc:     0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000044      2       {
+   0x08000040 <main+0>: b480            push    {r7}
+   0x08000042 <main+2>: b085            sub     sp, #20
+=> 0x08000044 <main+4>: af00            add     r7, sp, #0
+1: x/i $pc
+=> 0x8000044 <main+4>:  add     r7, sp, #0
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+3               int a = 10, b = 20;
+=> 0x08000046 <main+6>: 230a            movs    r3, #10
+   0x08000048 <main+8>: 60fb            str     r3, [r7, #12]
+1: x/i $pc
+=> 0x8000046 <main+6>:  movs    r3, #10
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000048      3               int a = 10, b = 20;
+   0x08000046 <main+6>: 230a            movs    r3, #10
+=> 0x08000048 <main+8>: 60fb            str     r3, [r7, #12]
+1: x/i $pc
+=> 0x8000048 <main+8>:  str     r3, [r7, #12]
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+3               int a = 10, b = 20;
+=> 0x0800004a <main+10>:        2314            movs    r3, #20
+   0x0800004c <main+12>:        60bb            str     r3, [r7, #8]
+1: x/i $pc
+=> 0x800004a <main+10>: movs    r3, #20
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800004c      3               int a = 10, b = 20;
+   0x0800004a <main+10>:        2314            movs    r3, #20
+=> 0x0800004c <main+12>:        60bb            str     r3, [r7, #8]
+1: x/i $pc
+=> 0x800004c <main+12>: str     r3, [r7, #8]
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+4               int c = a + b;
+=> 0x0800004e <main+14>:        68fa            ldr     r2, [r7, #12]
+   0x08000050 <main+16>:        68bb            ldr     r3, [r7, #8]
+   0x08000052 <main+18>:        4413            add     r3, r2
+   0x08000054 <main+20>:        607b            str     r3, [r7, #4]
+1: x/i $pc
+=> 0x800004e <main+14>: ldr     r2, [r7, #12]
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000050      4               int c = a + b;
+   0x0800004e <main+14>:        68fa            ldr     r2, [r7, #12]
+=> 0x08000050 <main+16>:        68bb            ldr     r3, [r7, #8]
+   0x08000052 <main+18>:        4413            add     r3, r2
+   0x08000054 <main+20>:        607b            str     r3, [r7, #4]
+1: x/i $pc
+=> 0x8000050 <main+16>: ldr     r3, [r7, #8]
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000052      4               int c = a + b;
+   0x0800004e <main+14>:        68fa            ldr     r2, [r7, #12]
+   0x08000050 <main+16>:        68bb            ldr     r3, [r7, #8]
+=> 0x08000052 <main+18>:        4413            add     r3, r2
+   0x08000054 <main+20>:        607b            str     r3, [r7, #4]
+1: x/i $pc
+=> 0x8000052 <main+18>: add     r3, r2
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000054      4               int c = a + b;
+   0x0800004e <main+14>:        68fa            ldr     r2, [r7, #12]
+   0x08000050 <main+16>:        68bb            ldr     r3, [r7, #8]
+   0x08000052 <main+18>:        4413            add     r3, r2
+=> 0x08000054 <main+20>:        607b            str     r3, [r7, #4]
+1: x/i $pc
+=> 0x8000054 <main+20>: str     r3, [r7, #4]
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+5               return 0;
+=> 0x08000056 <main+22>:        2300            movs    r3, #0
+1: x/i $pc
+=> 0x8000056 <main+22>: movs    r3, #0
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+6       }
+=> 0x08000058 <main+24>:        4618            mov     r0, r3
+   0x0800005a <main+26>:        3714            adds    r7, #20
+   0x0800005c <main+28>:        46bd            mov     sp, r7
+   0x0800005e <main+30>:        bc80            pop     {r7}
+   0x08000060 <main+32>:        4770            bx      lr
+1: x/i $pc
+=> 0x8000058 <main+24>: mov     r0, r3
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800005a      6       }
+   0x08000058 <main+24>:        4618            mov     r0, r3
+=> 0x0800005a <main+26>:        3714            adds    r7, #20
+   0x0800005c <main+28>:        46bd            mov     sp, r7
+   0x0800005e <main+30>:        bc80            pop     {r7}
+   0x08000060 <main+32>:        4770            bx      lr
+1: x/i $pc
+=> 0x800005a <main+26>: adds    r7, #20
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004fe8
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800005c      6       }
+   0x08000058 <main+24>:        4618            mov     r0, r3
+   0x0800005a <main+26>:        3714            adds    r7, #20
+=> 0x0800005c <main+28>:        46bd            mov     sp, r7
+   0x0800005e <main+30>:        bc80            pop     {r7}
+   0x08000060 <main+32>:        4770            bx      lr
+1: x/i $pc
+=> 0x800005c <main+28>: mov     sp, r7
+2: $sp = (void *) 0x20004fe8
+3: /x $r7 = 0x20004ffc
+4: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004fe8:     0x00000000      0x0000001e      0x00000014      0x0000000a
+0x20004ff8:     0x08000064      0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800005e      6       }
+   0x08000058 <main+24>:        4618            mov     r0, r3
+   0x0800005a <main+26>:        3714            adds    r7, #20
+   0x0800005c <main+28>:        46bd            mov     sp, r7
+=> 0x0800005e <main+30>:        bc80            pop     {r7}
+   0x08000060 <main+32>:        4770            bx      lr
+1: x/i $pc
+=> 0x800005e <main+30>: pop     {r7}
+2: $sp = (void *) 0x20004ffc
+3: /x $r7 = 0x20004ffc
+4: x/8xw $sp
+0x20004ffc:     0x00000000      <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20004ffc:     0x00000000      <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x08000060      6       }
+   0x08000058 <main+24>:        4618            mov     r0, r3
+   0x0800005a <main+26>:        3714            adds    r7, #20
+   0x0800005c <main+28>:        46bd            mov     sp, r7
+   0x0800005e <main+30>:        bc80            pop     {r7}
+=> 0x08000060 <main+32>:        4770            bx      lr
+1: x/i $pc
+=> 0x8000060 <main+32>: bx      lr
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800008c in Reset_Handler ()
+=> 0x0800008c <Reset_Handler+40>:       e7fe            b.n     0x800008c <Reset_Handler+40>
+1: x/i $pc
+=> 0x800008c <Reset_Handler+40>:        b.n     0x800008c <Reset_Handler+40>
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800008c in Reset_Handler ()
+=> 0x0800008c <Reset_Handler+40>:       e7fe            b.n     0x800008c <Reset_Handler+40>
+1: x/i $pc
+=> 0x800008c <Reset_Handler+40>:        b.n     0x800008c <Reset_Handler+40>
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800008c in Reset_Handler ()
+=> 0x0800008c <Reset_Handler+40>:       e7fe            b.n     0x800008c <Reset_Handler+40>
+1: x/i $pc
+=> 0x800008c <Reset_Handler+40>:        b.n     0x800008c <Reset_Handler+40>
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
+0x0800008c in Reset_Handler ()
+=> 0x0800008c <Reset_Handler+40>:       e7fe            b.n     0x800008c <Reset_Handler+40>
+1: x/i $pc
+=> 0x800008c <Reset_Handler+40>:        b.n     0x800008c <Reset_Handler+40>
+2: $sp = (void *) 0x20005000
+3: /x $r7 = 0x0
+4: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+5: /x $lr = 0x800008d
+6: x/8xw $sp
+0x20005000:     <error: Cannot access memory at address 0x20005000>
+(gdb) 
