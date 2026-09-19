@@ -2,7 +2,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-int main() {
+int main(void) {
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -10,6 +10,7 @@ int main() {
         return 1;
     } else if (pid == 0) {
         // Child process
+        // sleep(1);
         printf("Child: my pid = %d, parent pid = %d\n", getpid(), getppid());
     } else {
         // Parent process
