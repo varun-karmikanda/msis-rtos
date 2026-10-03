@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Introduction to OS</title>
+<style>
+:root{--bg:#f6f7f5;--ink:#16222b;--mute:#52606a;--card:#fff;--line:#c9d1d6;--u:#1f7a5a;--k:#b3402b;--a:#0d6e8c;--b:#c88a12;--c:#7a55a8;--io:#dfe4e7;--code:#eceff0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12191e;--ink:#e6ecef;--mute:#9aa8b1;--card:#1b252c;--line:#3a4852;--u:#4cc29a;--k:#ee7a62;--a:#4fb4d2;--b:#e3ad3c;--c:#a98adb;--io:#2c3941;--code:#222d34}}
+:root[data-theme="dark"]{--bg:#12191e;--ink:#e6ecef;--mute:#9aa8b1;--card:#1b252c;--line:#3a4852;--u:#4cc29a;--k:#ee7a62;--a:#4fb4d2;--b:#e3ad3c;--c:#a98adb;--io:#2c3941;--code:#222d34}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Charter,"Iowan Old Style",Georgia,serif}
+main{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+h1{font:700 2.4rem/1.1 "Avenir Next","Segoe UI",system-ui,sans-serif;margin:.2em 0 .15em;letter-spacing:-.02em}
+h2{font:700 1.45rem/1.2 "Avenir Next","Segoe UI",system-ui,sans-serif;margin:2.4em 0 .5em;padding-top:.8em;border-top:3px solid var(--ink)}
+h3{font:600 1.05rem/1.3 "Avenir Next","Segoe UI",system-ui,sans-serif;margin:1.4em 0 .3em}
+.sub{color:var(--mute);margin:0 0 1.2em}
+.goals{background:var(--card);border-left:4px solid var(--a);padding:12px 18px;margin:1em 0}
+.goals p{margin:.2em 0;font-weight:600}.goals ul{margin:.3em 0 0;padding-left:1.2em}
+p,li{max-width:70ch}
+code,.mono{font:.88em/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--code);padding:1px 5px;border-radius:3px}
+figure{margin:1.2em 0;background:var(--card);border:1px solid var(--line);padding:12px;border-radius:6px}
+figcaption{font:.85rem/1.4 system-ui,sans-serif;color:var(--mute);margin-top:6px}
+svg{width:100%;height:auto;display:block}
+svg text{fill:var(--ink);font:13px system-ui,sans-serif}
+svg .s{font-size:11px;fill:var(--mute)}svg .w{fill:#fff}
+.bx{fill:var(--card);stroke:var(--line);stroke-width:1.5}
+.ln{stroke:var(--ink);stroke-width:1.6;fill:none}.dl{stroke:var(--mute);stroke-width:1.2;fill:none;stroke-dasharray:4 3}
+.fa{fill:var(--a)}.fb{fill:var(--b)}.fc{fill:var(--c)}.fu{fill:var(--u)}.fk{fill:var(--k)}.fio{fill:var(--io);stroke:var(--line)}
+.tu{fill:color-mix(in srgb,var(--u) 14%,var(--card))}.tk{fill:color-mix(in srgb,var(--k) 14%,var(--card))}
+.tablewrap{overflow-x:auto;margin:1em 0}
+table{border-collapse:collapse;width:100%;font:.9rem/1.4 system-ui,sans-serif;background:var(--card)}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:color-mix(in srgb,var(--ink) 8%,var(--card))}
+.note{background:color-mix(in srgb,var(--b) 14%,var(--card));border-left:4px solid var(--b);padding:8px 14px;margin:1em 0;font-size:.95rem}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:640px){.two{grid-template-columns:1fr}h1{font-size:1.9rem}}
+a:focus-visible,button:focus-visible{outline:3px solid var(--a)}
+</style>
+</head>
+<body>
+<main>
+<h1>Introduction to OS</h1>
+<p class="sub">Training handout: operating systems and real-time operating systems. Audience: M.Eng. embedded / systems and computer science.</p>
+
+<div class="goals"><p>After this handout you can:</p><ul>
+<li>state what an OS provides and how it is organised;</li>
+<li>compare single-processor and multiprocessor systems, and batch, multiprogrammed, time-shared and interactive systems;</li>
+<li>trace a system call across the user/kernel boundary and contrast it with a function call;</li>
+<li>define hard, firm and soft real time and name the properties an RTOS must guarantee.</li></ul></div>
+
+<h2>1. Essential features of an OS</h2>
+<p>An OS is the software layer that (a) <b>manages hardware resources</b> (CPU, memory, storage, I/O) and arbitrates between competing programs, and (b) <b>provides abstractions</b> (process, file, address space, socket) so programs do not depend on raw hardware.</p>
+<table><tr><th>Feature</th><th>What it does</th></tr>
+<tr><td>Process / thread management</td><td>Creation, scheduling, synchronisation, IPC</td></tr>
+<tr><td>Memory management</td><td>Allocation, virtual addressing, protection between processes</td></tr>
+<tr><td>File system</td><td>Named, persistent storage over block devices</td></tr>
+<tr><td>Device management</td><td>Drivers, buffering, interrupt handling</td></tr>
+<tr><td>Protection and security</td><td>Access control; user vs kernel privilege</td></tr>
+<tr><td>User interface / API</td><td>System calls, shell, libraries</td></tr></table>
+<figure>
+<svg viewBox="0 0 680 270" role="img" aria-label="Layered OS structure">
+<rect class="bx" x="40" y="10" width="600" height="46"/><text x="340" y="38" text-anchor="middle">Applications (shell, editors, control tasks)</text>
+<rect class="bx" x="40" y="62" width="600" height="34"/><text x="340" y="84" text-anchor="middle">Libraries (libc, POSIX wrappers)</text>
+<line class="dl" x1="20" y1="106" x2="660" y2="106"/><text class="s" x="22" y="102">user space</text><text class="s" x="22" y="120">kernel space</text>
+<rect class="tk" stroke="var(--k)" stroke-width="2" x="40" y="126" width="600" height="28"/><text x="340" y="145" text-anchor="middle">System call interface (single controlled entry point)</text>
+<g class="tk" stroke="var(--line)"><rect x="40" y="160" width="140" height="44"/><rect x="190" y="160" width="140" height="44"/><rect x="340" y="160" width="140" height="44"/><rect x="490" y="160" width="150" height="44"/></g>
+<text x="110" y="187" text-anchor="middle">Process / scheduler</text><text x="260" y="187" text-anchor="middle">Memory manager</text><text x="410" y="187" text-anchor="middle">File system / IPC</text><text x="565" y="187" text-anchor="middle">Device drivers</text>
+<rect class="bx" x="40" y="214" width="600" height="46"/><text x="340" y="242" text-anchor="middle">Hardware: CPU(s), MMU/MPU, RAM, timer, interrupt controller, I/O</text>
+</svg><figcaption>Figure 1. Layered OS structure. The system-call interface is the only sanctioned way from user space into the kernel.</figcaption></figure>
+
+<h2>2. Single-processor and multiprocessor systems</h2>
+<div class="two">
+<div><h3>Single-processor</h3><p>One CPU core executes one instruction stream at a time. Concurrency is an illusion made by switching between processes. Special-purpose processors (DMA controller, GPU, disk controller) may exist but do not run general user processes.</p></div>
+<div><h3>Multiprocessor (parallel)</h3><p>Two or more cores share the bus, memory and peripherals under one OS. Benefits: higher throughput, economy of scale, graceful degradation if a CPU fails. Speed-up with <i>N</i> CPUs is below <i>N</i> because of contention and synchronisation overhead (Amdahl's law).</p></div></div>
+<figure>
+<svg viewBox="0 0 680 190" role="img" aria-label="Symmetric multiprocessor">
+<g class="bx"><rect x="60" y="14" width="110" height="44"/><rect x="200" y="14" width="110" height="44"/><rect x="340" y="14" width="110" height="44"/><rect x="480" y="14" width="110" height="44"/></g>
+<text x="115" y="34" text-anchor="middle">CPU 0</text><text x="255" y="34" text-anchor="middle">CPU 1</text><text x="395" y="34" text-anchor="middle">CPU 2</text><text x="535" y="34" text-anchor="middle">CPU 3</text>
+<text class="s" x="115" y="50" text-anchor="middle">L1 cache</text><text class="s" x="255" y="50" text-anchor="middle">L1 cache</text><text class="s" x="395" y="50" text-anchor="middle">L1 cache</text><text class="s" x="535" y="50" text-anchor="middle">L1 cache</text>
+<g class="ln"><path d="M115 58V90M255 58V90M395 58V90M535 58V90"/></g>
+<rect class="fk" x="40" y="90" width="570" height="16" rx="3"/><text class="w" x="325" y="102" text-anchor="middle" style="fill:#fff;font-size:11px">shared system bus / interconnect</text>
+<g class="ln"><path d="M150 106V140M325 106V140M500 106V140"/></g>
+<g class="bx"><rect x="90" y="140" width="120" height="38"/><rect x="265" y="140" width="120" height="38"/><rect x="440" y="140" width="120" height="38"/></g>
+<text x="150" y="164" text-anchor="middle">Shared RAM</text><text x="325" y="164" text-anchor="middle">I/O devices</text><text x="500" y="164" text-anchor="middle">Storage</text>
+</svg><figcaption>Figure 2. Symmetric multiprocessing (SMP): one OS image, any CPU runs any task, all CPUs see the same memory.</figcaption></figure>
+<div class="tablewrap"><table><tr><th></th><th>SMP (symmetric)</th><th>AMP (asymmetric)</th></tr>
+<tr><td>Roles</td><td>All cores peers; one kernel schedules on all</td><td>Cores have fixed roles, e.g. a master assigns work to others, or each core runs its own OS/RTOS</td></tr>
+<tr><td>Typical use</td><td>Servers, phones, application processors</td><td>Heterogeneous SoCs, e.g. Cortex-A running Linux plus Cortex-M running an RTOS</td></tr>
+<tr><td>Main issue</td><td>Cache coherence, lock contention</td><td>Inter-core communication, static partitioning</td></tr></table></div>
+<p>Multicore chips put several cores on one die; to the OS they are multiprocessors. Large systems may be <b>NUMA</b>: memory access time depends on which node holds the memory.</p>
+
+<h2>3. Batch, multiprogrammed, time-sharing and interactive systems</h2>
+<h3>Batch processing</h3>
+<p>Similar jobs are collected into a batch and run one after another <b>without user interaction</b>. The user submits a job (program, data, control cards or job-control language) and collects output later. A <b>resident monitor</b> automatically sequences jobs. <b>Spooling</b> overlaps I/O of one job with computation of another by staging input and output on disk.</p>
+<figure>
+<svg viewBox="0 0 680 100" role="img" aria-label="Batch flow">
+<g class="bx"><rect x="4" y="30" width="96" height="42"/><rect x="128" y="30" width="96" height="42"/><rect x="252" y="30" width="116" height="42"/><rect x="396" y="30" width="96" height="42"/><rect x="520" y="30" width="96" height="42"/></g>
+<g class="ln"><path d="M100 51h28M224 51h28M368 51h28M492 51h28"/></g>
+<text x="52" y="56" text-anchor="middle">Job submit</text><text x="176" y="56" text-anchor="middle">Input spool</text><text x="310" y="50" text-anchor="middle">Resident</text><text x="310" y="65" text-anchor="middle">monitor + CPU</text><text x="444" y="56" text-anchor="middle">Output spool</text><text x="568" y="56" text-anchor="middle">Printer</text>
+<text class="s" x="310" y="92" text-anchor="middle">jobs run strictly in sequence, no user interaction</text>
+</svg><figcaption>Figure 3. Batch pipeline with spooling.</figcaption></figure>
+<p><b>Limitations:</b> long turnaround time, no interaction or debugging during a run, and the CPU idles whenever the running job waits for I/O.</p>
+
+<h3>Multiprogramming</h3>
+<p>Several jobs are kept in memory at once. When the running job blocks on I/O, the OS switches the CPU to another ready job, so the CPU stays busy. Goal: maximise <b>CPU utilisation</b>. It requires job scheduling (which jobs enter memory), CPU scheduling (which ready job runs), memory management and protection between jobs. It is not interactive on its own.</p>
+<h3>Time sharing (multitasking)</h3>
+<p>A logical extension of multiprogramming: the CPU switches among jobs so often that each user perceives a dedicated machine. A <b>timer interrupt</b> ends each time slice (quantum, commonly of the order of 10 to 100 ms) and the scheduler (e.g. round robin) picks the next task. Goal: minimise <b>response time</b>.</p>
+<h3>Interactive systems</h3>
+<p>The user communicates directly with the running program through keyboard, mouse or touch, and expects a response within about a second or less. Time sharing is the mechanism that makes interactive use of a shared machine possible; interactive programs are mostly event-driven and spend most time blocked waiting for input.</p>
+<figure>
+<svg viewBox="0 0 680 262" role="img" aria-label="CPU timelines for three scheduling models">
+<text class="s" x="4" y="14">Time →</text>
+<g id="r1"><text x="4" y="40">Batch / uniprogramming</text><text class="s" x="4" y="56">CPU lane</text>
+<rect class="fa" x="200" y="26" width="50" height="26"/><rect class="fio" x="250" y="26" width="110" height="26"/><rect class="fa" x="360" y="26" width="30" height="26"/><rect class="fb" x="390" y="26" width="50" height="26"/><rect class="fio" x="440" y="26" width="110" height="26"/><rect class="fb" x="550" y="26" width="30" height="26"/>
+<text class="s" x="305" y="43" text-anchor="middle">idle (A in I/O)</text><text class="s" x="495" y="43" text-anchor="middle">idle (B in I/O)</text></g>
+<g><text x="4" y="110">Multiprogramming</text><text class="s" x="4" y="126">CPU lane</text>
+<rect class="fa" x="200" y="96" width="50" height="26"/><rect class="fb" x="250" y="96" width="50" height="26"/><rect class="fc" x="300" y="96" width="50" height="26"/><rect class="fa" x="350" y="96" width="30" height="26"/><rect class="fb" x="380" y="96" width="30" height="26"/><rect class="fc" x="410" y="96" width="30" height="26"/>
+<text class="s" x="200" y="140">A, B, C overlap their I/O waits; CPU stays busy. Jobs run until they block.</text></g>
+<g><text x="4" y="190">Time sharing</text><text class="s" x="4" y="206">CPU lane</text>
+<rect class="fa" x="200" y="176" width="30" height="26"/><rect class="fb" x="230" y="176" width="30" height="26"/><rect class="fc" x="260" y="176" width="30" height="26"/><rect class="fa" x="290" y="176" width="30" height="26"/><rect class="fb" x="320" y="176" width="30" height="26"/><rect class="fc" x="350" y="176" width="30" height="26"/><rect class="fa" x="380" y="176" width="30" height="26"/><rect class="fb" x="410" y="176" width="30" height="26"/><rect class="fc" x="440" y="176" width="30" height="26"/>
+<path class="dl" d="M230 170V216M260 170V216M290 170V216M320 170V216M350 170V216M380 170V216M410 170V216M440 170V216"/>
+<text class="s" x="200" y="232">Dashed lines: timer interrupt → context switch every quantum (round robin).</text></g>
+<g transform="translate(470,236)"><rect class="fa" y="-9" width="12" height="12"/><text class="s" x="16" y="2">A</text><rect class="fb" x="40" y="-9" width="12" height="12"/><text class="s" x="56" y="2">B</text><rect class="fc" x="80" y="-9" width="12" height="12"/><text class="s" x="96" y="2">C</text><rect class="fio" x="120" y="-9" width="12" height="12"/><text class="s" x="136" y="2">I/O wait</text></g>
+</svg><figcaption>Figure 4. Schematic CPU timelines (not to scale). Multiprogramming removes idle time; time sharing adds pre-emption by timer.</figcaption></figure>
+<div class="tablewrap"><table><tr><th></th><th>Batch</th><th>Multiprogramming</th><th>Time sharing / interactive</th></tr>
+<tr><td>Main goal</td><td>Throughput of job stream</td><td>CPU utilisation</td><td>Response time</td></tr>
+<tr><td>User interaction</td><td>None during run</td><td>None required</td><td>Direct, continuous</td></tr>
+<tr><td>Switch trigger</td><td>Job ends</td><td>Job blocks for I/O</td><td>Timer interrupt or block</td></tr>
+<tr><td>Context-switch cost</td><td>Negligible</td><td>Low</td><td>Significant; sets quantum size</td></tr></table></div>
+
+<h2>4. User mode and kernel mode</h2>
+<p>Hardware distinguishes at least two privilege levels so a faulty or malicious program cannot corrupt the OS or other programs. A <b>mode bit</b> records the current level. Kernel code runs privileged; applications run unprivileged.</p>
+<ul>
+<li><b>Privileged instructions</b> execute only in kernel mode: I/O instructions, changing MMU/MPU settings, enabling or disabling interrupts, loading the timer, changing the mode bit, halting. Executing one in user mode raises an exception.</li>
+<li><b>Memory protection</b> (MMU page tables or an MPU) limits each program to its own regions.</li>
+<li><b>Timer</b>: the kernel arms it before handing the CPU to a user program, so no program can hold the CPU forever.</li></ul>
+<figure>
+<svg viewBox="0 0 680 210" role="img" aria-label="Mode transitions">
+<rect class="tu" stroke="var(--u)" stroke-width="2" x="30" y="50" width="200" height="110" rx="8"/><text x="130" y="95" text-anchor="middle" style="font-weight:700">User mode</text><text class="s" x="130" y="115" text-anchor="middle">applications, libraries</text><text class="s" x="130" y="132" text-anchor="middle">unprivileged instructions only</text>
+<rect class="tk" stroke="var(--k)" stroke-width="2" x="450" y="50" width="200" height="110" rx="8"/><text x="550" y="95" text-anchor="middle" style="font-weight:700">Kernel mode</text><text class="s" x="550" y="115" text-anchor="middle">OS kernel, drivers, handlers</text><text class="s" x="550" y="132" text-anchor="middle">all instructions, all memory</text>
+<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--ink)"/></marker></defs>
+<path class="ln" marker-end="url(#ar)" d="M230 80C300 40 380 40 450 80"/><text x="340" y="38" text-anchor="middle">system call (trap), interrupt, exception</text>
+<path class="ln" marker-end="url(#ar)" d="M450 132C380 172 300 172 230 132"/><text x="340" y="190" text-anchor="middle">return from trap / interrupt (mode bit restored)</text>
+</svg><figcaption>Figure 5. Entry to the kernel is only through traps, interrupts and exceptions; exit is by a privileged return instruction.</figcaption></figure>
+<div class="tablewrap"><table><tr><th>Architecture</th><th>Privilege levels</th><th>Where the level lives / entry instruction</th></tr>
+<tr><td>x86 / x86-64</td><td>Rings 0 to 3 (OS uses 0 and 3)</td><td>CPL = bits [1:0] of <code>CS</code>; <code>SYSCALL</code>/<code>SYSENTER</code>/<code>INT n</code></td></tr>
+<tr><td>ARMv8-A (AArch64)</td><td>EL0 (user), EL1 (kernel), EL2 (hypervisor), EL3 (secure monitor)</td><td><code>PSTATE.EL</code>; <code>SVC</code> traps EL0 to EL1</td></tr>
+<tr><td>ARM Cortex-M</td><td>Thread / Handler mode, each privileged or unprivileged</td><td><code>CONTROL.nPRIV</code> (bit 0) and <code>CONTROL.SPSEL</code> (bit 1); <code>SVC</code> raises the SVCall exception</td></tr>
+<tr><td>RISC-V</td><td>M, S, U (S optional)</td><td>Current mode held by hardware; <code>mstatus.MPP</code> saves previous mode; <code>ECALL</code></td></tr></table></div>
+<div class="note">Many small MCUs have no unprivileged mode or MPU, so an RTOS task there can touch any memory. Protection then relies on discipline, or on an MPU-enabled RTOS build.</div>
+
+<h2>5. Function call vs system call</h2>
+<div class="tablewrap"><table><tr><th></th><th>Function call</th><th>System call</th></tr>
+<tr><td>Mechanism</td><td><code>CALL</code> / <code>BL</code>; pushes return address, jumps</td><td>Trap instruction (<code>SYSCALL</code>, <code>SVC</code>, <code>ECALL</code>, <code>INT 0x80</code>) into the kernel</td></tr>
+<tr><td>Privilege</td><td>No change</td><td>User → kernel mode and back</td></tr>
+<tr><td>Target</td><td>Any address in the program, found by linker</td><td>Number indexes a kernel dispatch table; user cannot choose an address</td></tr>
+<tr><td>Stack</td><td>Same stack</td><td>Switches to a per-task kernel stack</td></tr>
+<tr><td>Arguments</td><td>ABI registers / stack</td><td>Registers, validated by kernel (pointers are checked)</td></tr>
+<tr><td>Cost</td><td>A few cycles</td><td>Hundreds of cycles or more: mode switch, argument checks, possible pipeline and TLB effects</td></tr>
+<tr><td>Can fail by</td><td>Program bug</td><td>Returns error code (e.g. <code>-EFAULT</code>); the kernel survives bad input</td></tr></table></div>
+<p>Applications normally call a <b>library wrapper</b> (e.g. <code>write()</code> in libc), which is an ordinary function call; the wrapper loads the syscall number and arguments and executes the trap.</p>
+<figure>
+<svg viewBox="0 0 680 250" role="img" aria-label="write() system call path">
+<rect class="tu" x="10" y="26" width="660" height="88"/><rect class="tk" x="10" y="130" width="660" height="108"/>
+<text class="s" x="14" y="20">User space (unprivileged)</text><text class="s" x="14" y="126">Kernel space (privileged)</text>
+<g class="bx"><rect x="24" y="48" width="100" height="44"/><rect x="164" y="48" width="110" height="44"/><rect x="324" y="48" width="150" height="44"/></g>
+<text x="74" y="74" text-anchor="middle">printf("hi")</text><text x="219" y="68" text-anchor="middle">libc write()</text><text class="s" x="219" y="83" text-anchor="middle">wrapper</text><text x="399" y="68" text-anchor="middle">load number + args</text><text class="s" x="399" y="83" text-anchor="middle">then SYSCALL</text>
+<g class="bx"><rect x="324" y="152" width="150" height="44"/><rect x="164" y="152" width="130" height="44"/><rect x="24" y="152" width="110" height="44"/></g>
+<text x="399" y="170" text-anchor="middle">Entry stub</text><text class="s" x="399" y="185" text-anchor="middle">save regs, kernel stack</text><text x="229" y="170" text-anchor="middle">Dispatch table</text><text class="s" x="229" y="185" text-anchor="middle">sys_call_table[n]</text><text x="79" y="170" text-anchor="middle">sys_write()</text><text class="s" x="79" y="185" text-anchor="middle">VFS → driver</text>
+<g class="ln"><path d="M124 70h40M274 70h50M399 92V152M324 174h-30M164 174h-30"/></g>
+<path class="ln" stroke-dasharray="5 3" d="M79 196v28h420V92" marker-end="url(#ar2)"/>
+<defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--ink)"/></marker></defs>
+<text class="s" x="290" y="218" text-anchor="middle">result in RAX → SYSRET returns to user mode</text>
+<text class="s" x="560" y="70">trap: mode bit → kernel</text>
+</svg><figcaption>Figure 6. Path of <code>write()</code> on Linux x86-64.</figcaption></figure>
+<h3>Reference: Linux calling conventions</h3>
+<div class="tablewrap"><table><tr><th>ABI</th><th>Instruction</th><th>Syscall number</th><th>Arguments</th><th>Return</th><th>write / exit</th></tr>
+<tr><td>x86-64</td><td><code>syscall</code></td><td><code>RAX</code></td><td><code>RDI, RSI, RDX, R10, R8, R9</code></td><td><code>RAX</code></td><td>1 / 60</td></tr>
+<tr><td>x86-32</td><td><code>int 0x80</code></td><td><code>EAX</code></td><td><code>EBX, ECX, EDX, ESI, EDI, EBP</code></td><td><code>EAX</code></td><td>4 / 1</td></tr>
+<tr><td>AArch64</td><td><code>svc #0</code></td><td><code>X8</code></td><td><code>X0 to X5</code></td><td><code>X0</code></td><td>64 / 93</td></tr></table></div>
+<p>On x86-64 the <code>SYSCALL</code> instruction saves the return <code>RIP</code> in <code>RCX</code> and <code>RFLAGS</code> in <code>R11</code>, which is why the 4th argument uses <code>R10</code> instead of <code>RCX</code>.</p>
+
+<h2>6. Real-time operating systems and real-time embedded systems</h2>
+<p>A system is <b>real-time</b> if correctness depends on <i>when</i> a result is produced as well as its value. "Real-time" means bounded and predictable, not fast. An <b>RTOS</b> is an OS whose scheduling, interrupt handling and services have bounded, documented worst-case latencies. A <b>real-time embedded system</b> is a computer inside a larger device (engine controller, pacemaker, drone) that must react to its environment within deadlines.</p>
+<div class="tablewrap"><table><tr><th>Class</th><th>Missing a deadline means</th><th>Example</th></tr>
+<tr><td>Hard</td><td>System failure; possible harm</td><td>Airbag firing, ABS, pacemaker pacing</td></tr>
+<tr><td>Firm</td><td>Result is useless but system continues; occasional misses tolerated</td><td>Sensor-fusion frame dropped, factory vision reject</td></tr>
+<tr><td>Soft</td><td>Quality degrades, value falls gradually</td><td>Audio/video streaming, UI</td></tr></table></div>
+<h3>Timing metrics</h3>
+<figure>
+<svg viewBox="0 0 680 150" role="img" aria-label="Event response timeline">
+<line class="ln" x1="20" y1="80" x2="660" y2="80" marker-end="url(#ar)"/>
+<g class="ln"><path d="M60 64V96M180 64V96M300 64V96M400 64V96M560 64V96"/></g>
+<text x="60" y="52" text-anchor="middle">Event</text><text x="180" y="52" text-anchor="middle">ISR starts</text><text x="300" y="52" text-anchor="middle">Scheduler runs</text><text x="400" y="52" text-anchor="middle">Task starts</text><text x="560" y="52" text-anchor="middle">Task done</text>
+<path class="ln" d="M60 112H180"/><text class="s" x="120" y="128" text-anchor="middle">interrupt latency</text>
+<path class="ln" d="M180 112H400"/><text class="s" x="290" y="144" text-anchor="middle">dispatch latency (ISR end → task start)</text>
+<path class="ln" d="M400 112H560"/><text class="s" x="480" y="128" text-anchor="middle">execution time</text>
+<path class="dl" d="M60 20H560"/><text class="s" x="310" y="16" text-anchor="middle">response time must be ≤ deadline, worst case</text>
+</svg><figcaption>Figure 7. In an RTOS, the worst case of each interval is bounded; <b>jitter</b> is the variation of a latency between runs.</figcaption></figure>
+<h3>Task states and scheduling</h3>
+<figure>
+<svg viewBox="0 0 680 170" role="img" aria-label="RTOS task state machine">
+<g class="bx"><rect x="20" y="60" width="120" height="44" rx="22"/><rect x="280" y="60" width="120" height="44" rx="22"/><rect x="540" y="60" width="120" height="44" rx="22"/><rect x="280" y="126" width="120" height="36" rx="18"/></g>
+<text x="80" y="87" text-anchor="middle">Blocked</text><text x="340" y="87" text-anchor="middle">Ready</text><text x="600" y="87" text-anchor="middle">Running</text><text x="340" y="149" text-anchor="middle">Suspended</text>
+<path class="ln" marker-end="url(#ar)" d="M140 76H280"/><text class="s" x="210" y="70" text-anchor="middle">event/timeout</text>
+<path class="ln" marker-end="url(#ar)" d="M400 70H540"/><text class="s" x="470" y="62" text-anchor="middle">highest priority</text>
+<path class="ln" marker-end="url(#ar)" d="M540 94H400"/><text class="s" x="470" y="112" text-anchor="middle">pre-empted</text>
+<path class="ln" marker-end="url(#ar)" d="M600 60C600 10 80 10 80 60"/><text class="s" x="340" y="24" text-anchor="middle">waits on delay, queue, semaphore, mutex</text>
+</svg><figcaption>Figure 8. Typical RTOS task states (FreeRTOS naming; "Suspended" tasks are not scheduled until resumed).</figcaption></figure>
+<ul>
+<li><b>Priority-based pre-emptive scheduling</b>: the highest-priority ready task always runs; a newly ready higher-priority task pre-empts immediately.</li>
+<li><b>Rate-monotonic (RM)</b>: fixed priorities, shorter period = higher priority. Schedulable if CPU utilisation U ≤ n(2<sup>1/n</sup> − 1): 1.000 (n=1), 0.828 (n=2), 0.780 (n=3), tending to ln 2 ≈ 0.693. This is a sufficient, not necessary, test.</li>
+<li><b>Earliest deadline first (EDF)</b>: dynamic priorities; schedulable on one CPU iff U ≤ 1 (implicit deadlines).</li>
+<li><b>Priority inversion</b>: a low-priority task holding a lock blocks a high-priority one while a medium task runs. Fix with <b>priority inheritance</b> or ceiling protocols. This caused the 1997 Mars Pathfinder resets (VxWorks).</li></ul>
+<h3>Cortex-M example</h3>
+<p>RTOS ports use three core exceptions: <code>SVCall</code> (exception 11, vector at <code>0x0000002C</code>) to start the first task or request kernel services; <code>PendSV</code> (14, <code>0x00000038</code>) at lowest priority for context switching; <code>SysTick</code> (15, <code>0x0000003C</code>) for the periodic OS tick. Deferring the switch to PendSV keeps it from pre-empting other interrupt handlers.</p>
+<h3>GPOS vs RTOS</h3>
+<div class="tablewrap"><table><tr><th></th><th>General-purpose OS (Linux, Windows)</th><th>RTOS (FreeRTOS, Zephyr, VxWorks, QNX, RTEMS)</th></tr>
+<tr><td>Design goal</td><td>Throughput, fairness, features</td><td>Determinism, bounded latency</td></tr>
+<tr><td>Scheduler</td><td>Time-slice, fairness-oriented</td><td>Priority-based, pre-emptive</td></tr>
+<tr><td>Kernel size</td><td>Megabytes</td><td>Often a few KB to hundreds of KB</td></tr>
+<tr><td>Virtual memory</td><td>Typical</td><td>Often absent or MPU-only</td></tr>
+<tr><td>Worst-case timing</td><td>Not guaranteed (stock kernel)</td><td>Documented and tested</td></tr></table></div>
+<div class="note">Stock Linux is not hard real time; the PREEMPT_RT patch set (merged into mainline from Linux 6.12) greatly narrows worst-case latency.</div>
+
+<h2>Review questions</h2>
+<ol>
+<li>Why must the instruction that disables interrupts be privileged?</li>
+<li>A job spends 80% of its time waiting for I/O. Roughly how many such jobs must be in memory to keep one CPU near full use under multiprogramming?</li>
+<li>Name two reasons a system call costs more than a function call.</li>
+<li>Three periodic tasks have U = 0.82. Does the RM bound guarantee schedulability? Does EDF?</li>
+<li>Classify: an airbag controller; a video player; an engine-control task that drops one stale sample.</li></ol>
+
+<h2>Answers</h2>
+<ol>
+<li><b>Interrupts.</b> If a user program could disable interrupts, it could mask the timer interrupt and keep the CPU indefinitely, and it could delay or lose device interrupts. The kernel would lose control of scheduling and I/O, so the instruction is privileged.</li>
+<li><b>Jobs in memory.</b> If each job waits for I/O a fraction p = 0.8 of the time and waits are independent, CPU utilisation is 1 − p<sup>n</sup>. n = 10 gives about 0.89, n = 15 about 0.96, n = 20 about 0.99. So roughly 10 to 15 jobs. This is a simplified model; real waits are not independent, and memory limits the degree of multiprogramming.</li>
+<li><b>System call cost.</b> Any two of: the mode switch and the kernel entry/exit work (saving and restoring registers, switching to the kernel stack); validating arguments and copying data across the user/kernel boundary; lost pipeline, cache or TLB state; extra mitigations against speculative-execution attacks on some CPUs.</li>
+<li><b>U = 0.82, three tasks.</b> The RM bound for n = 3 is 0.780. Since 0.82 &gt; 0.780, the bound does <i>not</i> guarantee schedulability; the set might still be schedulable, which needs exact response-time analysis. EDF is schedulable on one CPU when U ≤ 1 (deadlines equal periods, independent tasks), so 0.82 passes.</li>
+<li><b>Classification.</b> Airbag controller: hard (a missed deadline can cause harm). Video player: soft (a late frame only degrades quality). Engine-control task dropping one stale sample: firm (the late result is useless and is discarded, but the system continues).</li></ol>
+</main>
+</body>
+</html>

@@ -1,0 +1,249 @@
+    <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Introduction to OS: Process Management and Scheduling</title>
+<style>
+:root{--bg:#f6f7f5;--ink:#16222b;--mute:#52606a;--card:#fff;--line:#c9d1d6;--u:#1f7a5a;--k:#b3402b;--a:#0d6e8c;--b:#c88a12;--code:#eceff0;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12191e;--ink:#e6ecef;--mute:#9aa8b1;--card:#1b252c;--line:#3a4852;--u:#4cc29a;--k:#ee7a62;--a:#4fb4d2;--b:#e3ad3c;--code:#222d34}}
+:root[data-theme="dark"]{--bg:#12191e;--ink:#e6ecef;--mute:#9aa8b1;--card:#1b252c;--line:#3a4852;--u:#4cc29a;--k:#ee7a62;--a:#4fb4d2;--b:#e3ad3c;--code:#222d34}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 Charter,"Iowan Old Style",Georgia,serif}
+main{max-width:860px;margin:0 auto;padding:28px 20px 60px}
+h1{font:700 2.4rem/1.1 "Avenir Next","Segoe UI",system-ui,sans-serif;margin:.2em 0 .15em;letter-spacing:-.02em}
+h2{font:700 1.45rem/1.2 "Avenir Next","Segoe UI",system-ui,sans-serif;margin:2.4em 0 .5em;padding-top:.8em;border-top:3px solid var(--ink)}
+h3,h4{font:600 1.05rem/1.3 "Avenir Next","Segoe UI",system-ui,sans-serif;margin:1.4em 0 .3em}h4{font-size:.95rem;color:var(--mute)}
+.sub{color:var(--mute);margin:0 0 1.2em}
+p,li{max-width:70ch}
+code,pre{font:.88em/1.4 ui-monospace,Menlo,Consolas,monospace;background:var(--code);border-radius:3px}code{padding:1px 5px}
+pre{padding:10px 14px;overflow-x:auto}
+figure{margin:1.2em 0;background:var(--card);border:1px solid var(--line);padding:12px;border-radius:6px}
+figcaption{font:.85rem/1.4 system-ui,sans-serif;color:var(--mute);margin-top:6px}
+svg{width:100%;height:auto;display:block}
+svg text{fill:var(--ink);font:13px system-ui,sans-serif}svg .s{font-size:11px;fill:var(--mute)}
+.bx{fill:var(--card);stroke:var(--line);stroke-width:1.5}.ln{stroke:var(--ink);stroke-width:1.6;fill:none}.dl{stroke:var(--mute);stroke-width:1.2;fill:none;stroke-dasharray:4 3}
+.tw{overflow-x:auto;margin:1em 0}
+table{border-collapse:collapse;width:100%;font:.9rem/1.4 system-ui,sans-serif;background:var(--card)}
+th,td{border:1px solid var(--line);padding:6px 10px;text-align:left;vertical-align:top}th{background:color-mix(in srgb,var(--ink) 8%,var(--card))}
+.th{border-left:4px solid var(--u);padding:2px 16px;margin:1.2em 0}.th h4{margin:.6em 0 .2em}
+.q{background:var(--card);border-left:4px solid var(--a);padding:6px 16px 12px;margin:1.2em 0}
+.q h3{margin-top:.6em}
+details{margin-top:10px;border:1px solid var(--line);padding:6px 12px;background:var(--bg)}
+summary{cursor:pointer;font:600 .95rem system-ui,sans-serif;color:var(--a)}
+summary:focus-visible{outline:3px solid var(--a)}
+.note{background:color-mix(in srgb,var(--b) 14%,var(--card));border-left:4px solid var(--b);padding:8px 14px;margin:1em 0;font-size:.95rem}
+@media(max-width:640px){h1{font-size:1.9rem}}
+</style>
+</head>
+<body>
+<main>
+<h1>Introduction to OS</h1>
+<p class="sub">Part 2: Process management and process scheduling. Audience: M.Eng. embedded / systems and computer science. Every scheduling algorithm has a worked problem; try it first, then open the answer.</p>
+
+<h2>1. Process management</h2>
+<h3>A process in memory</h3>
+<p>A <b>process</b> is a program in execution: code plus current activity (program counter, registers, stack, data). A program is passive (a file on disk); a process is active.</p>
+<p><b>Process vs thread.</b> A process owns an address space and resources (open files, PCB). A thread is a unit of execution inside it with its own PC, registers and stack, sharing the process's code, data and heap. <b>Creation:</b> a parent creates children (<code>fork()</code>), forming a process tree rooted at <code>init</code>/<code>systemd</code> (PID 1). <b>Termination:</b> a process calls <code>exit()</code> or is killed; the kernel frees its resources but keeps the PCB's exit status until the parent calls <code>wait()</code>. A terminated child not yet waited for is a <b>zombie</b>; a child whose parent exited is an <b>orphan</b> and is adopted by PID 1.</p>
+<p><b>Process behaviour.</b> An <b>I/O-bound</b> process has many short CPU bursts between I/O requests; a <b>CPU-bound</b> process has few, long bursts. The scheduler design below exists to serve both well.</p>
+<figure>
+<svg viewBox="0 0 680 270" role="img" aria-label="Process memory layout">
+<text class="s" x="30" y="12">high address</text><text class="s" x="30" y="266">low address (0)</text>
+<g class="bx"><rect x="150" y="18" width="260" height="40"/><rect x="150" y="96" width="260" height="40"/><rect x="150" y="136" width="260" height="30"/><rect x="150" y="166" width="260" height="30"/><rect x="150" y="196" width="260" height="60"/></g>
+<rect x="150" y="58" width="260" height="38" fill="none" stroke="var(--line)" stroke-dasharray="4 3"/>
+<text x="280" y="43" text-anchor="middle">Stack: frames, locals, return addresses</text><text x="280" y="82" text-anchor="middle" class="s">unmapped gap</text>
+<text x="280" y="121" text-anchor="middle">Heap: malloc / new</text><text x="280" y="155" text-anchor="middle">.bss: uninitialised globals (zeroed)</text><text x="280" y="185" text-anchor="middle">.data: initialised globals</text><text x="280" y="231" text-anchor="middle">.text: code (read-only)</text>
+<defs><marker id="m" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8z" fill="var(--ink)"/></marker></defs>
+<path class="ln" marker-end="url(#m)" d="M440 22V56"/><text class="s" x="448" y="42">stack grows down</text>
+<path class="ln" marker-end="url(#m)" d="M440 132V98"/><text class="s" x="448" y="118">heap grows up</text>
+</svg><figcaption>Figure 1. Typical virtual address space of a process (layout varies by OS and architecture).</figcaption></figure>
+
+<h3>Process state</h3>
+<figure>
+<svg viewBox="0 0 680 190" role="img" aria-label="Process state diagram">
+<g class="bx"><rect x="10" y="70" width="90" height="44" rx="22"/><rect x="180" y="70" width="90" height="44" rx="22"/><rect x="400" y="70" width="100" height="44" rx="22"/><rect x="590" y="70" width="90" height="44" rx="22"/><rect x="290" y="140" width="100" height="40" rx="20"/></g>
+<text x="55" y="97" text-anchor="middle">New</text><text x="225" y="97" text-anchor="middle">Ready</text><text x="450" y="97" text-anchor="middle">Running</text><text x="635" y="97" text-anchor="middle">Terminated</text><text x="340" y="165" text-anchor="middle">Waiting</text>
+<g class="ln"><path marker-end="url(#m)" d="M100 92H180"/><path marker-end="url(#m)" d="M270 82H400"/><path marker-end="url(#m)" d="M400 104H270"/><path marker-end="url(#m)" d="M500 92H590"/><path marker-end="url(#m)" d="M450 114V160H390"/><path marker-end="url(#m)" d="M290 160H225V114"/></g>
+<text class="s" x="140" y="86" text-anchor="middle">admitted</text><text class="s" x="335" y="76" text-anchor="middle">scheduler dispatch</text><text class="s" x="335" y="120" text-anchor="middle">interrupt / pre-empt</text><text class="s" x="545" y="86" text-anchor="middle">exit</text><text class="s" x="458" y="140">I/O or event wait</text><text class="s" x="218" y="142" text-anchor="end">I/O or event completion</text>
+</svg><figcaption>Figure 2. Five-state process model. Only one process per CPU core is Running at an instant.</figcaption></figure>
+
+<h3>Process control block (PCB)</h3>
+<p>The kernel's per-process record (<code>task_struct</code> in Linux). A <b>context switch</b> saves the running process's CPU state into its PCB and loads the next one's; it is pure overhead.</p>
+<div class="tw"><table><tr><th>PCB field</th><th>Content</th></tr>
+<tr><td>Process ID, parent ID</td><td>Unique PID; PPID</td></tr><tr><td>State</td><td>New, Ready, Running, Waiting, Terminated</td></tr>
+<tr><td>Program counter, CPU registers</td><td>Saved on a switch so execution can resume exactly</td></tr>
+<tr><td>Scheduling information</td><td>Priority, queue pointers, time used</td></tr>
+<tr><td>Memory-management information</td><td>Page-table base, segment limits</td></tr>
+<tr><td>Accounting, I/O status</td><td>CPU time used, open files, allocated devices</td></tr></table></div>
+
+<h4>Context switch</h4>
+<p>On an interrupt or system call the kernel (1) saves the running process's PC and registers into its PCB, (2) updates its state and moves the PCB to the proper queue, (3) selects the next process, (4) loads that process's registers, page-table base and PC from its PCB, and (5) resumes it. No useful work is done meanwhile; typical cost is a few microseconds, rising with cache and TLB refill. Hardware with multiple register sets can cut it.</p>
+<h3>Scheduling queues and schedulers</h3>
+<figure>
+<svg viewBox="0 0 680 200" role="img" aria-label="Queueing diagram">
+<g class="bx"><rect x="20" y="30" width="170" height="40"/><circle cx="310" cy="50" r="32"/><rect x="250" y="120" width="120" height="40"/><rect x="450" y="120" width="100" height="40"/></g>
+<text x="105" y="55" text-anchor="middle">Ready queue</text><text x="310" y="55" text-anchor="middle">CPU</text><text x="310" y="145" text-anchor="middle">I/O queue</text><text x="500" y="145" text-anchor="middle">I/O device</text>
+<g class="ln"><path marker-end="url(#m)" d="M190 50H278"/><path marker-end="url(#m)" d="M342 50H440"/><path marker-end="url(#m)" d="M310 82V120"/><path marker-end="url(#m)" d="M370 140H450"/><path marker-end="url(#m)" d="M500 160V186H105V70"/><path marker-end="url(#m)" d="M310 18V8H105V30"/></g>
+<text class="s" x="446" y="46">exit</text><text class="s" x="318" y="104">I/O request</text><text class="s" x="200" y="20">time slice expired / pre-empted</text><text class="s" x="300" y="182">I/O complete → back to ready</text>
+</svg><figcaption>Figure 3. Queueing diagram. Also: a forked child waits in the ready queue; a process waiting for an interrupt sits in a wait queue.</figcaption></figure>
+<div class="tw"><table><tr><th>Scheduler</th><th>Decides</th><th>Frequency</th><th>Notes</th></tr>
+<tr><td>Long-term (job)</td><td>Which jobs are admitted to memory</td><td>Seconds to minutes</td><td>Controls degree of multiprogramming; aims for a mix of I/O-bound and CPU-bound</td></tr>
+<tr><td>Short-term (CPU)</td><td>Which ready process gets the CPU next</td><td>Milliseconds</td><td>Must be fast; followed by the <b>dispatcher</b> (context switch, switch to user mode, jump to saved PC)</td></tr>
+<tr><td>Medium-term</td><td>Which processes to swap out and back in</td><td>Occasional</td><td>Reduces memory pressure and load</td></tr></table></div>
+
+<p><b>Queues.</b> The <b>job queue</b> holds all processes in the system; the <b>ready queue</b> holds those in memory and ready to run (usually a linked list of PCBs with head and tail pointers); each I/O device has a <b>device queue</b> of processes waiting for it. A process migrates between these queues throughout its life.</p>
+<p><b>Scheduler balance.</b> If the long-term scheduler admits only I/O-bound jobs the CPU idles; only CPU-bound jobs leave devices idle. A good mix keeps both busy. The <b>medium-term scheduler</b> swaps a process out to disk and later back in (swapping) to improve the mix or free memory. The <b>dispatcher</b> time between stopping one process and starting another is <b>dispatch latency</b>.</p>
+<h3>Process system calls (POSIX)</h3>
+<pre>pid_t pid = fork();            /* 0 in child, child's PID in parent, -1 on error */
+if (pid == 0) { execlp("ls", "ls", (char*)0); _exit(127); }   /* replace image */
+else if (pid &gt; 0) { int st; waitpid(pid, &amp;st, 0); }          /* parent reaps child */</pre>
+<p><code>fork()</code> duplicates the process; <code>exec*()</code> replaces its program image; <code>wait()/waitpid()</code> blocks until a child ends and reaps it (otherwise it stays a zombie); <code>exit()</code> terminates.</p>
+
+<p>Processes are isolated by default, yet cooperating processes need to exchange data for <b>information sharing</b>, <b>computation speed-up</b> and <b>modularity</b>. There are two models: <b>shared memory</b> (processes read and write a common region) and <b>message passing</b> (the kernel carries messages with <code>send</code>/<code>receive</code>; sockets, pipes and message queues are examples). Shared memory is faster for large data; message passing is simpler to get right and works across machines.</p>
+<h3>IPC using shared memory</h3>
+<p>Processes map the same physical pages into their own address spaces. After setup there is no kernel involvement per access, so it is the fastest IPC, but the processes must synchronise themselves (semaphore, mutex).</p>
+<figure>
+<svg viewBox="0 0 680 150" role="img" aria-label="Shared memory mapping">
+<g class="bx"><rect x="20" y="10" width="180" height="50"/><rect x="20" y="90" width="180" height="50"/><rect x="480" y="40" width="170" height="70"/></g>
+<text x="110" y="40" text-anchor="middle">Process A: mapped region</text><text x="110" y="120" text-anchor="middle">Process B: mapped region</text><text x="565" y="70" text-anchor="middle">Shared physical</text><text x="565" y="88" text-anchor="middle">frames (RAM)</text>
+<g class="ln"><path marker-end="url(#m)" d="M200 35L480 60"/><path marker-end="url(#m)" d="M200 115L480 90"/></g><text class="s" x="340" y="30">page tables map to the same frames</text>
+</svg><figcaption>Figure 4. Shared memory.</figcaption></figure>
+<p>POSIX call sequence: <code>shm_open()</code> (create/open object) → <code>ftruncate()</code> (set size) → <code>mmap(…, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0)</code> → use → <code>munmap()</code>, <code>shm_unlink()</code>.</p>
+
+<p><b>Classic example: producer-consumer.</b> A producer fills a bounded buffer in shared memory, a consumer empties it. The producer must wait when the buffer is full, the consumer when it is empty, and both must not update the buffer indices at once. Without synchronisation (semaphores, mutex plus condition variables) the result is a race condition.</p>
+<h3>IPC using sockets</h3>
+<p>A socket is a communication endpoint for message passing, between processes on one host (<code>AF_UNIX</code>) or across a network (<code>AF_INET</code>). The kernel copies data between buffers, so it is slower than shared memory but works across machines.</p>
+<figure>
+<svg viewBox="0 0 680 290" role="img" aria-label="TCP socket call sequence">
+<text x="110" y="14" text-anchor="middle" style="font-weight:700">Server</text><text x="570" y="14" text-anchor="middle" style="font-weight:700">Client</text>
+<g class="bx"><rect x="40" y="24" width="140" height="30"/><rect x="40" y="70" width="140" height="30"/><rect x="40" y="116" width="140" height="30"/><rect x="40" y="162" width="140" height="30"/><rect x="40" y="208" width="140" height="30"/><rect x="40" y="254" width="140" height="30"/>
+<rect x="500" y="116" width="140" height="30"/><rect x="500" y="162" width="140" height="30"/><rect x="500" y="208" width="140" height="30"/><rect x="500" y="254" width="140" height="30"/></g>
+<g text-anchor="middle"><text x="110" y="44">socket()</text><text x="110" y="90">bind()</text><text x="110" y="136">listen()</text><text x="110" y="182">accept() blocks</text><text x="110" y="228">recv() / send()</text><text x="110" y="274">close()</text><text x="570" y="136">socket()</text><text x="570" y="182">connect()</text><text x="570" y="228">send() / recv()</text><text x="570" y="274">close()</text></g>
+<g class="ln"><path marker-end="url(#m)" d="M110 54V70M110 100V116M110 146V162M110 192V208M110 238V254M570 146V162M570 192V208M570 238V254"/></g>
+<path class="ln" stroke-dasharray="5 3" marker-end="url(#m)" d="M500 177H182"/><text class="s" x="340" y="170" text-anchor="middle">TCP handshake</text>
+<path class="dl" d="M182 223H498"/><text class="s" x="340" y="216" text-anchor="middle">data both directions</text>
+</svg><figcaption>Figure 5. TCP (<code>SOCK_STREAM</code>) sequence. UDP (<code>SOCK_DGRAM</code>) skips listen/accept/connect and uses <code>sendto()/recvfrom()</code>.</figcaption></figure>
+
+<p>A socket is identified by an IP address plus a port number (0 to 65535; ports below 1024 are well-known and privileged). <b>TCP</b> gives a reliable, ordered byte stream with connection set-up; <b>UDP</b> gives unreliable, unordered datagrams with no set-up. Sockets are treated as file descriptors, so <code>read()/write()/close()</code> also work on them.</p>
+<h2>2. Process scheduling</h2>
+<p>The short-term scheduler picks the next ready process. Decisions occur when a process (1) moves Running→Waiting, (2) Running→Ready, (3) Waiting→Ready, (4) terminates. If scheduling happens only at 1 and 4 the scheme is <b>non-preemptive</b>; otherwise it is <b>pre-emptive</b>.</p>
+<div class="tw"><table><tr><th>Criterion</th><th>Goal</th><th>Definition (AT = arrival, BT = CPU burst, CT = completion)</th></tr>
+<tr><td>CPU utilisation</td><td>Maximise</td><td>Fraction of time the CPU is busy</td></tr>
+<tr><td>Throughput</td><td>Maximise</td><td>Processes completed per unit time</td></tr>
+<tr><td>Turnaround time (TAT)</td><td>Minimise</td><td>CT − AT</td></tr>
+<tr><td>Waiting time (WT)</td><td>Minimise</td><td>TAT − BT (time spent in the ready queue)</td></tr>
+<tr><td>Response time (RT)</td><td>Minimise</td><td>First time on CPU − AT</td></tr></table></div>
+<p><b>CPU-I/O burst cycle.</b> Execution alternates between a CPU burst and an I/O wait. Most bursts are short (a few ms); very few are long, so the burst-length distribution is heavy at the short end. This is why favouring short bursts (SJF, feedback queues) works well. The scheduler is invoked at the four decision points above, and the dispatcher then performs the switch.</p>
+<div class="note">Conventions for all problems: time unit = ms, context-switch time = 0, single CPU, one CPU burst per process, no I/O. Ties are broken by earlier arrival, then lower process number.</div>
+
+<h3>Scheduling algorithms</h3>
+<div class="tw"><table><tr><th>Algorithm</th><th>Rule</th><th>Pre-emptive?</th><th>Main weakness</th></tr>
+<tr><td>FCFS</td><td>Queue order of arrival</td><td>No</td><td>Convoy effect: short jobs wait behind a long one</td></tr>
+<tr><td>SJF</td><td>Shortest next CPU burst first; minimises average WT</td><td>No (SJF) / yes (SRTF)</td><td>Burst length unknown; estimated as τ<sub>n+1</sub> = α·t<sub>n</sub> + (1−α)·τ<sub>n</sub>; long jobs may starve</td></tr>
+<tr><td>Priority (PS)</td><td>Highest priority first (here lower number = higher priority)</td><td>Either</td><td>Starvation; fix by <b>aging</b> (raise priority with waiting time)</td></tr>
+<tr><td>Round robin (RR)</td><td>FCFS with time quantum <i>q</i>; pre-empt at expiry</td><td>Yes</td><td>Large <i>q</i> → FCFS; tiny <i>q</i> → switch overhead. With <i>n</i> processes, no one waits more than (n−1)·q for its turn</td></tr>
+<tr><td>Multilevel queue</td><td>Ready queue split by process class; each queue has its own algorithm; fixed priority (or time share) between queues</td><td>Yes</td><td>Rigid: no movement between queues</td></tr>
+<tr><td>Multilevel feedback queue</td><td>Like MLQ, but processes move between queues based on behaviour</td><td>Yes</td><td>Many parameters to tune</td></tr></table></div>
+
+<div class="th"><h4>FCFS theory</h4>
+<p>Processes get the CPU in order of arrival, implemented with a FIFO queue; a running process keeps the CPU until it finishes or blocks (non-preemptive). Simple and starvation-free, but average waiting time depends heavily on arrival order. Bursts 24, 3, 3 arriving in that order give average WT = (0+24+27)/3 = 17 ms; arriving as 3, 3, 24 gives (0+3+6)/3 = 3 ms. Short processes stuck behind one long CPU-bound process is the <b>convoy effect</b>, which also leaves I/O devices idle. Unsuitable for time-sharing.</p></div>
+<div class="q"><h3>Problem 1: FCFS</h3>
+<p>Draw the Gantt chart and compute CT, TAT, WT, RT for each process and their averages.</p><div id="q1p" class="tw"></div>
+<details><summary>Show answer</summary><div id="q1a"></div><p>Average WT = 5.75 ms. P4 needs only 2 ms but waits 13 ms behind P3: the convoy effect.</p></details></div>
+
+<div class="th"><h4>SJF and SRTF theory</h4>
+<p>Each process is associated with the length of its next CPU burst and the shortest runs first. SJF is <b>provably optimal</b> for minimum average WT: moving a short job ahead of a long one reduces the short job's wait by more than it increases the long job's. The difficulty is that the next burst is unknown, so it is predicted by <b>exponential averaging</b>: τ<sub>n+1</sub> = α·t<sub>n</sub> + (1−α)·τ<sub>n</sub>, where t<sub>n</sub> is the measured last burst and τ<sub>n</sub> the previous prediction (0 ≤ α ≤ 1; α = 0 ignores recent behaviour, α = 1 uses only the last burst; α = ½ is common). Example: α = ½, τ<sub>0</sub> = 10, t<sub>0</sub> = 6 gives τ<sub>1</sub> = 8; then t<sub>1</sub> = 4 gives τ<sub>2</sub> = 6.</p>
+<p><b>SRTF</b> is the pre-emptive version: when a process arrives with a burst shorter than the running process's <i>remaining</i> time, it pre-empts. Long processes may starve if short ones keep arriving.</p></div>
+<div class="q"><h3>Problem 2: SJF (non-preemptive)</h3>
+<p>Schedule with non-preemptive SJF. The same workload is reused in Problem 3.</p><div id="q2p" class="tw"></div>
+<details><summary>Show answer</summary><div id="q2a"></div><p>At t = 7 the ready processes are P2 (4), P3 (1), P4 (4); P3 runs, then the P2/P4 tie goes to earlier arrival. Average WT = 4.00 ms.</p></details></div>
+
+<div class="q"><h3>Problem 3: SRTF (pre-emptive SJF)</h3>
+<p>Same workload as Problem 2, now with shortest-remaining-time-first: a new arrival pre-empts the running process if its burst is shorter than the remaining time. Compare average WT with Problem 2.</p>
+<details><summary>Show answer</summary><div id="q3a"></div><p>P2 pre-empts P1 at t = 2 (4 &lt; 5); P3 pre-empts P2 at t = 4 (1 &lt; 2). Average WT = 3.00 ms versus 4.00 ms non-preemptive, with the cost of more context switches.</p></details></div>
+
+<div class="th"><h4>Priority scheduling theory</h4>
+<p>Each process has a priority and the CPU goes to the highest. SJF is a special case where priority = 1/predicted burst. Priorities are <b>internal</b> (computed from time limits, memory needs, I/O-to-CPU burst ratio) or <b>external</b> (importance, user, payment). It can be non-preemptive (the new arrival waits) or pre-emptive (a higher-priority arrival takes the CPU at once). <b>Indefinite blocking (starvation)</b> of low-priority processes is its chief problem; <b>aging</b> gradually raises the priority of waiting processes. Equal-priority processes are often scheduled round robin. RTOSes use fixed-priority pre-emptive scheduling.</p></div>
+<div class="q"><h3>Problem 4: Priority scheduling (non-preemptive)</h3>
+<p>All processes arrive at t = 0. Lower number = higher priority. Find the Gantt chart and average WT. Then name the risk for P4 if high-priority work keeps arriving, and the remedy.</p><div id="q4p" class="tw"></div>
+<details><summary>Show answer</summary><div id="q4a"></div><p>Average WT = 8.20 ms. Risk: <b>starvation</b> of low-priority processes (P4). Remedy: <b>aging</b>, e.g. raise priority by 1 for every 10 ms spent waiting.</p></details></div>
+
+<div class="th"><h4>Round robin theory</h4>
+<p>FCFS plus a <b>time quantum</b> q (commonly 10 to 100 ms), designed for time-sharing. The ready queue is circular. A timer interrupts after q; if the burst is shorter than q the process releases the CPU voluntarily, otherwise it is pre-empted and goes to the queue tail. With n ready processes each gets 1/n of the CPU and waits at most (n−1)·q before its turn, which gives good response time. Choice of q: very large → behaves as FCFS; very small → context-switch overhead dominates. Overhead fraction = cs / (q + cs), e.g. cs = 0.1 ms and q = 10 ms gives about 1%. Rule of thumb: about 80% of bursts should be shorter than q. Average turnaround is often worse than SJF.</p></div>
+<div class="q"><h3>Problem 5: Round robin, q = 4</h3>
+<p>Schedule with RR, q = 4. A process arriving at the same instant a quantum expires joins the queue before the pre-empted process. Also count the context switches.</p><div id="q5p" class="tw"></div>
+<details><summary>Show answer</summary><div id="q5a"></div><p>Ready queue after t = 4 is P2, P3, P4, P1. Average WT = 8.75 ms. Seven CPU slices, so 6 context switches. Response time is bounded by the queue position, not by burst length.</p></details></div>
+
+<h3>Multilevel queue and multilevel feedback queue</h3>
+<div class="th"><h4>Multilevel queue (MLQ) theory</h4>
+<p>The ready queue is <b>partitioned</b> by process type, for example foreground (interactive) and background (batch). A process is permanently assigned to one queue and each queue has its own algorithm (foreground RR, background FCFS). Scheduling <i>between</i> queues is either <b>fixed priority</b> (serve foreground until empty; risk of starvation) or <b>time slicing</b> (e.g. 80% of CPU to foreground RR, 20% to background FCFS). Low overhead, but inflexible.</p></div>
+<div class="th"><h4>Multilevel feedback queue (MLFQ) theory</h4>
+<p>Allows processes to <b>move between queues</b>, separating them by observed CPU-burst behaviour. A process that uses too much CPU is demoted; one that waits too long in a low queue is promoted (aging). Interactive and I/O-bound processes stay in high queues. It is defined by five parameters: number of queues; algorithm per queue; rule to upgrade a process; rule to demote it; and which queue a new process enters. Most general and most complex scheduler; it approximates SJF without knowing burst lengths.</p></div>
+
+<figure>
+<svg viewBox="0 0 680 200" role="img" aria-label="Multilevel feedback queue">
+<g class="bx"><rect x="170" y="20" width="260" height="38"/><rect x="170" y="80" width="260" height="38"/><rect x="170" y="140" width="260" height="38"/></g>
+<text x="300" y="44" text-anchor="middle">Q0: RR, q = 2 (highest)</text><text x="300" y="104" text-anchor="middle">Q1: RR, q = 4</text><text x="300" y="164" text-anchor="middle">Q2: FCFS (lowest)</text>
+<g class="ln"><path marker-end="url(#m)" d="M300 58V80"/><path marker-end="url(#m)" d="M300 118V140"/><path marker-end="url(#m)" d="M60 39H170"/></g>
+<text class="s" x="310" y="73">quantum used up → demote</text><text class="s" x="310" y="133">quantum used up → demote</text><text class="s" x="60" y="30">new process</text>
+<text class="s" x="450" y="44">runs first</text><text class="s" x="450" y="104">runs only if Q0 empty</text><text class="s" x="450" y="164">runs only if Q0, Q1 empty</text>
+</svg><figcaption>Figure 6. A three-level feedback queue. Short, interactive bursts finish in Q0; CPU-bound work sinks to Q2. A lower queue is pre-empted when a higher one becomes non-empty.</figcaption></figure>
+
+<div class="q"><h3>Problem 6: Multilevel queue</h3>
+<p>Two queues. Q1 (system processes): RR, q = 2. Q2 (batch): FCFS. Q1 has absolute priority over Q2 and pre-empts it. Find the Gantt chart and averages.</p><div id="q6p" class="tw"></div>
+<details><summary>Show answer</summary><div id="q6a"></div><p>P3 arrives at t = 1 and queues behind P1 in Q1. Q2 starts only at t = 7 when Q1 is empty, so P2 (arrived at 0) waits 7 ms. Average WT = 5.00 ms.</p></details></div>
+
+<div class="q"><h3>Problem 7: Multilevel feedback queue</h3>
+<p>Queues as in Figure 6 (Q0 RR q = 2, Q1 RR q = 4, Q2 FCFS). A process that uses a full quantum is demoted one level. All arrive at t = 0 in order P1, P2, P3. Give the Gantt chart, and state which queue each process finishes in.</p><div id="q7p" class="tw"></div>
+<details><summary>Show answer</summary><div id="q7a"></div><p>Q0 (t = 0 to 6): each runs 2. P1 has 5 left, P2 1, P3 7 → all to Q1. Q1: P1 runs 4 (1 left → Q2), P2 finishes in Q1 at t = 11, P3 runs 4 (3 left → Q2). Q2 (FCFS): P1 finishes at 16, P3 at 19. So P2 finishes in Q1; P1 and P3 in Q2. Average WT = 9.00 ms.</p></details></div>
+
+<h2>3. Scheduling evaluation</h2>
+<div class="tw"><table><tr><th>Method</th><th>Idea</th><th>Limit</th></tr>
+<tr><td>Deterministic modelling</td><td>Run each algorithm on a fixed workload and compare metrics (as in these problems)</td><td>Exact but only for that workload</td></tr>
+<tr><td>Queueing models</td><td>Use arrival and service distributions; Little's formula <b>n = λ × W</b></td><td>Assumptions often unrealistic</td></tr>
+<tr><td>Simulation</td><td>Model the system; drive with random or trace data</td><td>Costly; trace must be representative</td></tr>
+<tr><td>Implementation</td><td>Build it in a real kernel and measure</td><td>Most accurate; highest cost and risk</td></tr></table></div>
+
+<p><b>Choosing criteria.</b> Evaluation starts by fixing what to optimise, often as a constraint such as "maximise CPU utilisation subject to maximum response time ≤ 1 s". <b>Little's formula</b> n = λ × W relates average queue length n, arrival rate λ and average wait W; it holds for any scheduling algorithm and arrival distribution in steady state. <b>Simulation</b> uses a clock variable and models of arrivals and bursts, either random with fitted distributions or taken from a recorded trace of a real system.</p>
+<div class="q"><h3>Problem 8: Deterministic modelling</h3>
+<p>Processes P1, P2, P3 all arrive at t = 0. Compare FCFS, non-preemptive SJF and RR (q = 4) on average WT and average RT. Which is best for each metric?</p><div id="q8p" class="tw"></div>
+<details><summary>Show answer</summary><div id="q8a"></div><p>Average WT: FCFS 7.33, SJF 3.33, RR 7.33. Average RT: FCFS 7.33, SJF 3.33, RR 3.33. SJF is best on waiting time. RR ties FCFS on waiting time but matches SJF on response time, which is why it suits interactive systems.</p></details></div>
+
+<div class="q"><h3>Problem 9: Little's formula</h3>
+<p>On average 14 processes are in the ready queue and 7 processes arrive per second. What is the average time a process spends in the queue?</p>
+<details><summary>Show answer</summary><p>W = n / λ = 14 / 7 = 2 s. (Valid in steady state, when the arrival rate equals the departure rate.)</p></details></div>
+</main>
+<script>
+const C={P1:'#0d6e8c',P2:'#9a6a00',P3:'#7a55a8',P4:'#1f7a5a',P5:'#b3402b'};
+function gantt(sg){const T=sg[sg.length-1][2],s=640/T;let h='<svg viewBox="0 0 680 64" role="img" aria-label="Gantt chart">';
+sg.forEach(([n,a,b])=>{h+=`<rect x="${20+a*s}" y="6" width="${(b-a)*s}" height="30" fill="${C[n]}" stroke="var(--card)"/><text x="${20+(a+b)/2*s}" y="26" text-anchor="middle" style="fill:#fff;font-weight:600">${n}</text>`});
+[...new Set(sg.flatMap(x=>[x[1],x[2]]))].forEach(t=>h+=`<text class="s" x="${20+t*s}" y="54" text-anchor="middle">${t}</text>`);return h+'</svg>'}
+function tbl(ps,sg){let r='<table><tr><th>Process</th><th>AT</th><th>BT</th><th>CT</th><th>TAT</th><th>WT</th><th>RT</th></tr>',S=0,W=0,R=0;
+ps.forEach(p=>{const m=sg.filter(x=>x[0]==p.n),ct=Math.max(...m.map(x=>x[2])),rt=Math.min(...m.map(x=>x[1]))-p.at,t=ct-p.at,w=t-p.bt;S+=t;W+=w;R+=rt;
+r+=`<tr><td>${p.n}</td><td>${p.at}</td><td>${p.bt}</td><td>${ct}</td><td>${t}</td><td>${w}</td><td>${rt}</td></tr>`});
+const n=ps.length;return r+`<tr><th colspan="4">Average</th><th>${(S/n).toFixed(2)}</th><th>${(W/n).toFixed(2)}</th><th>${(R/n).toFixed(2)}</th></tr></table>`}
+function prob(id,ps,xl){const e=document.getElementById(id+'p');if(!e)return;
+e.innerHTML='<table><tr><th>Process</th><th>AT</th><th>BT</th>'+(xl?`<th>${xl}</th>`:'')+'</tr>'+ps.map(p=>`<tr><td>${p.n}</td><td>${p.at}</td><td>${p.bt}</td>${xl?`<td>${p.x}</td>`:''}</tr>`).join('')+'</table>'}
+function ans(id,ps,sg,label){document.getElementById(id+'a').innerHTML+=(label?`<h4>${label}</h4>`:'')+gantt(sg)+'<div class="tw">'+tbl(ps,sg)+'</div>'}
+const P=(a)=>a.map(([n,at,bt,x])=>({n,at,bt,x}));
+const w1=P([['P1',0,5],['P2',1,3],['P3',2,8],['P4',3,2]]);
+prob('q1',w1);ans('q1',w1,[['P1',0,5],['P2',5,8],['P3',8,16],['P4',16,18]]);
+const w2=P([['P1',0,7],['P2',2,4],['P3',4,1],['P4',5,4]]);
+prob('q2',w2);ans('q2',w2,[['P1',0,7],['P3',7,8],['P2',8,12],['P4',12,16]]);
+ans('q3',w2,[['P1',0,2],['P2',2,4],['P3',4,5],['P2',5,7],['P4',7,11],['P1',11,16]]);
+const w4=P([['P1',0,10,3],['P2',0,1,1],['P3',0,2,4],['P4',0,1,5],['P5',0,5,2]]);
+prob('q4',w4,'Priority');ans('q4',w4,[['P2',0,1],['P5',1,6],['P1',6,16],['P3',16,18],['P4',18,19]]);
+const w5=P([['P1',0,10],['P2',1,4],['P3',2,5],['P4',3,2]]);
+prob('q5',w5);ans('q5',w5,[['P1',0,4],['P2',4,8],['P3',8,12],['P4',12,14],['P1',14,18],['P3',18,19],['P1',19,21]]);
+const w6=P([['P1',0,4,'Q1'],['P2',0,3,'Q2'],['P3',1,3,'Q1'],['P4',2,2,'Q2']]);
+prob('q6',w6,'Queue');ans('q6',w6,[['P1',0,2],['P3',2,4],['P1',4,6],['P3',6,7],['P2',7,10],['P4',10,12]]);
+const w7=P([['P1',0,7],['P2',0,3],['P3',0,9]]);
+prob('q7',w7);ans('q7',w7,[['P1',0,2],['P2',2,4],['P3',4,6],['P1',6,10],['P2',10,11],['P3',11,15],['P1',15,16],['P3',16,19]]);
+const w8=P([['P1',0,10],['P2',0,2],['P3',0,6]]);
+prob('q8',w8);
+ans('q8',w8,[['P1',0,10],['P2',10,12],['P3',12,18]],'FCFS');
+ans('q8',w8,[['P2',0,2],['P3',2,8],['P1',8,18]],'SJF (non-preemptive)');
+ans('q8',w8,[['P1',0,4],['P2',4,6],['P3',6,10],['P1',10,14],['P3',14,16],['P1',16,18]],'Round robin, q = 4');
+</script>
+</body>
+</html>

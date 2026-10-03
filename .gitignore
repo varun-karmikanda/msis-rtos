@@ -20,3 +20,7 @@ Thumbs.db
 
 # Debugger files
 .gdb_history
+
+03-stm32f103/FreeRTOS
+
+notes/others
