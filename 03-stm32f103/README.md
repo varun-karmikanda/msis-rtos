@@ -1,50 +1,124 @@
-# stm32f103 workspace
+# STM32F103 Workspace
+
+## Prerequisites
+
+Use Ubuntu or WSL2 and install the ARM compiler, Make, Git, and ST-LINK
+utilities:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential make git gcc-arm-none-eabi \
+  binutils-arm-none-eabi gdb-multiarch stlink-tools openocd
+```
+
+Verify the installation:
+
+```bash
+arm-none-eabi-gcc --version
+make --version
+st-info --probe
+```
+
+Connect an ST-LINK debugger and an STM32F103 board before using `make flash`.
 
 ```
-stm32f103/
+03-stm32f103/
 ├── FreeRTOS/                  <- you add this (git clone), source only
 ├── common/
 │   ├── startup_stm32f103.s     <- vector table + Reset_Handler (self-written)
 │   ├── stm32f103.ld            <- linker script (self-written)
 │   ├── stm32f103_regs.h        <- minimal RCC/GPIO/SysTick register defs
 │   └── common.mk                <- shared build rules
-├── led-blink/                  <- baremetal, no RTOS, no libraries
+├── 01-led-blink/               <- bare-metal, no RTOS, no libraries
 │   ├── Makefile
 │   └── main.c
-└── three-thread-blink/         <- 3 FreeRTOS tasks blinking 3 LEDs
+├── 02-three-thread-blink/      <- 3 FreeRTOS tasks blinking 3 LEDs
+├── 03-three-thread-blink_hse/  <- HSE clock version
+├── 04-priority-inversion/     <- priority inversion demonstration
+├── 05-shared-led-mutex/       <- shared LED protected by a mutex
+├── 06-shared-led-no-sync/     <- shared LED without synchronization
+└── 07-three-thread-blink-priority/ <- task-priority demonstration
     ├── Makefile
     ├── main.c
     └── FreeRTOSConfig.h
 ```
 
-Verified: both projects were built end-to-end with `arm-none-eabi-gcc
-13.2.1` during preparation of this workspace - `led-blink` compiles and
-links with zero warnings, and `three-thread-blink` builds against a real
-clone of FreeRTOS-Kernel with zero warnings in any of our own code
+The projects use `arm-none-eabi-gcc` and the shared build rules in
+`common/common.mk`. The FreeRTOS projects build against a local clone of
+FreeRTOS-Kernel.
 (FreeRTOS's own `port.c` prints one harmless unused-variable warning
 upstream, unrelated to anything here).
 
 ## One-time setup
 
 ```sh
-cd stm32f103
+cd 03-stm32f103
 git clone --depth 1 https://github.com/FreeRTOS/FreeRTOS-Kernel.git FreeRTOS
 ```
 
-That's it - no libopencm3, no CMSIS, no HAL to install. `led-blink`
-doesn't even need that step.
+Run the clone command only once. No libopencm3, CMSIS, or HAL installation is
+required. The bare-metal `01-led-blink` project does not use FreeRTOS.
 
-## Building
+## Build and flash any project
+
+Start from the repository root and enter one project folder:
 
 ```sh
-cd led-blink            # or three-thread-blink
-make                     # -> build/<project>.elf/.bin/.hex
-make flash               # st-flash write build/<project>.bin 0x8000000
+cd 03-stm32f103/01-led-blink
+make                     # build ELF, BIN, and HEX files
+make size                # display firmware size
+make flash               # flash the BIN at 0x08000000
+make clean               # remove build files
+```
+
+The same commands work in every numbered project:
+
+```sh
+cd ../02-three-thread-blink
+make
+make flash
+```
+
+For the priority project:
+
+```sh
+cd ../07-three-thread-blink-priority
+make
+make flash
+```
+
+The complete project list is:
+
+```text
+01-led-blink
+02-three-thread-blink
+03-three-thread-blink_hse
+04-priority-inversion
+05-shared-led-mutex
+06-shared-led-no-sync
+07-three-thread-blink-priority
+```
+
+From `03-stm32f103`, build a specific project with:
+
+```sh
+cd 01-led-blink                    # change this to any folder above
+make
+make size
+make flash
+```
+
+For example, to build the mutex demonstration:
+
+```sh
+cd 03-stm32f103/05-shared-led-mutex
+make
+make flash
 make size
 make clean
 ```
 
-## Hardware for three-thread-blink
+## Hardware for LED projects
 
 - PC13 -> onboard LED (active-low, already on the board), 1 s period
 - PA0  -> external LED + ~330R resistor to GND, 2 s period
@@ -78,8 +152,8 @@ that in, so it stays a pure baremetal binary.
 ## Adding a new project
 
 ```sh
-mkdir stm32f103/my-project
-cd stm32f103/my-project
+mkdir my-project
+cd my-project
 # write main.c
 cat > Makefile <<'EOF'
 ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
@@ -91,4 +165,4 @@ make
 ```
 
 Add `EXTRA_CFLAGS`/extra `SRCS` lines in that Makefile (following
-`three-thread-blink/Makefile`) if the project also needs FreeRTOS.
+`02-three-thread-blink/Makefile`) if the project also needs FreeRTOS.

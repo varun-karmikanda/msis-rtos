@@ -3,6 +3,32 @@
 These programs demonstrate process creation and process replacement on Linux.
 All programs can be compiled with `gcc`.
 
+## Prerequisites
+
+Install GCC and the Linux process-inspection utilities:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential procps psmisc
+```
+
+Verify the installation:
+
+```bash
+gcc --version
+pstree --version
+pgrep --version
+```
+
+Start from the repository root:
+
+```bash
+cd 04-process-management
+```
+
+Every exercise is independent. Enter its folder before compiling and running
+it. The commands below are complete, step-by-step examples.
+
 ## 1. `01-basic-fork/basic_fork.c`
 
 Demonstrates basic `fork()` usage. The parent and child processes print
