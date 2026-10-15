@@ -5,8 +5,20 @@
 *.bin
 *.hex
 *.map
+*.exe
+*.out
 build/
 dist/
+
+# Linux exercise executables
+04-process-management/**/basic_fork
+04-process-management/**/fork_waitpid
+04-process-management/**/fork_sleep
+04-process-management/**/fork_three_children
+04-process-management/**/recursive_fork
+04-process-management/**/fork_exec
+04-process-management/**/exec_prog
+04-process-management/**/exec_program
 
 # Editor temporary files
 *.swp
