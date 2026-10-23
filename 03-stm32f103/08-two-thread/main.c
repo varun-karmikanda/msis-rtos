@@ -2,6 +2,10 @@
 #include "stm32f103_regs.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t mutex_A;
+SemaphoreHandle_t mutex_B;
 
 typedef struct {
     GPIO_TypeDef    *port;
@@ -27,6 +31,15 @@ static void led_task_1(void *pvParameters){
     {
         args->port->ODR ^= (1U << args->pin);
         vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+        xSemaphoreTake(mutex_A, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        xSemaphoreTake(mutex_B, portMAX_DELAY);
+
+        xSemaphoreGive(mutex_B);
+        xSemaphoreGive(mutex_A);
+
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
@@ -37,10 +50,25 @@ static void led_task_2(void *pvParameters){
     {
         args->port->ODR ^= (1U << args->pin);
         vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+        xSemaphoreTake(mutex_B, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(100));
+        xSemaphoreTake(mutex_A, portMAX_DELAY);
+
+        xSemaphoreGive(mutex_A);
+        xSemaphoreGive(mutex_B);
     }
 }
 
 int main(void){
+
+    mutex_A = xSemaphoreCreateMutex();
+    mutex_B = xSemaphoreCreateMutex();
+
+    if(mutex_A == NULL || mutex_B == NULL){
+        for(;;) {}
+    }
+
     RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
 
     gpio_output_init(led_a.port, led_a.pin);
