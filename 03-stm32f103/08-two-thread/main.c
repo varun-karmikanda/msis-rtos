@@ -30,17 +30,22 @@ static void led_task_1(void *pvParameters){
     for (;;)
     {
         xSemaphoreTake(mutex_A, portMAX_DELAY);
-        xSemaphoreTake(mutex_B, portMAX_DELAY);
-        
-        args->port->ODR ^= (1U << args->pin);
-        vTaskDelay(pdMS_TO_TICKS(args->period_ms));
 
-        vTaskDelay(pdMS_TO_TICKS(2000));
+        if(xSemaphoreTake(mutex_B, pdMS_TO_TICKS(500)) == pdPASS){
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
 
-        xSemaphoreGive(mutex_B);
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+            xSemaphoreGive(mutex_B);
+        }
+
+
         xSemaphoreGive(mutex_A);
 
         vTaskDelay(pdMS_TO_TICKS(100));
+
     }
 }
 
@@ -49,19 +54,23 @@ static void led_task_2(void *pvParameters){
 
     for (;;)
     {
-        xSemaphoreTake(mutex_A, portMAX_DELAY);
         xSemaphoreTake(mutex_B, portMAX_DELAY);
-        
-        
-        args->port->ODR ^= (1U << args->pin);
-        vTaskDelay(pdMS_TO_TICKS(args->period_ms));
 
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        if(xSemaphoreTake(mutex_A, pdMS_TO_TICKS(500)) == pdPASS){
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+            xSemaphoreGive(mutex_A);
+        }
+
 
         xSemaphoreGive(mutex_B);
-        xSemaphoreGive(mutex_A);
 
         vTaskDelay(pdMS_TO_TICKS(100));
+
     }
 }
 
