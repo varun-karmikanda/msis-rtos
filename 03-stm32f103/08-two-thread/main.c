@@ -29,12 +29,13 @@ static void led_task_1(void *pvParameters){
 
     for (;;)
     {
+        xSemaphoreTake(mutex_A, portMAX_DELAY);
+        xSemaphoreTake(mutex_B, portMAX_DELAY);
+        
         args->port->ODR ^= (1U << args->pin);
         vTaskDelay(pdMS_TO_TICKS(args->period_ms));
 
-        xSemaphoreTake(mutex_A, portMAX_DELAY);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        xSemaphoreTake(mutex_B, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(2000));
 
         xSemaphoreGive(mutex_B);
         xSemaphoreGive(mutex_A);
@@ -48,15 +49,19 @@ static void led_task_2(void *pvParameters){
 
     for (;;)
     {
+        xSemaphoreTake(mutex_A, portMAX_DELAY);
+        xSemaphoreTake(mutex_B, portMAX_DELAY);
+        
+        
         args->port->ODR ^= (1U << args->pin);
         vTaskDelay(pdMS_TO_TICKS(args->period_ms));
 
-        xSemaphoreTake(mutex_B, portMAX_DELAY);
-        vTaskDelay(pdMS_TO_TICKS(100));
-        xSemaphoreTake(mutex_A, portMAX_DELAY);
+        vTaskDelay(pdMS_TO_TICKS(5000));
 
-        xSemaphoreGive(mutex_A);
         xSemaphoreGive(mutex_B);
+        xSemaphoreGive(mutex_A);
+
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
 }
 
