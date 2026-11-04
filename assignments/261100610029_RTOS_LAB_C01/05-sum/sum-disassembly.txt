@@ -1,0 +1,51 @@
+
+sum_prog.o:     file format elf32-littlearm
+
+
+Disassembly of section .text:
+
+00000000 <mySum>:
+int mySum(int a, int b)
+{
+   0:	b480      	push	{r7}
+   2:	b083      	sub	sp, #12
+   4:	af00      	add	r7, sp, #0
+   6:	6078      	str	r0, [r7, #4]
+   8:	6039      	str	r1, [r7, #0]
+    return a+b;
+   a:	687a      	ldr	r2, [r7, #4]
+   c:	683b      	ldr	r3, [r7, #0]
+   e:	4413      	add	r3, r2
+}
+  10:	4618      	mov	r0, r3
+  12:	370c      	adds	r7, #12
+  14:	46bd      	mov	sp, r7
+  16:	bc80      	pop	{r7}
+  18:	4770      	bx	lr
+
+0000001a <main>:
+
+int main(void)
+{
+  1a:	b580      	push	{r7, lr}
+  1c:	b084      	sub	sp, #16
+  1e:	af00      	add	r7, sp, #0
+    int i=5, j=10, sum=0;
+  20:	2305      	movs	r3, #5
+  22:	60fb      	str	r3, [r7, #12]
+  24:	230a      	movs	r3, #10
+  26:	60bb      	str	r3, [r7, #8]
+  28:	2300      	movs	r3, #0
+  2a:	607b      	str	r3, [r7, #4]
+    sum =mySum(i,j);
+  2c:	68b9      	ldr	r1, [r7, #8]
+  2e:	68f8      	ldr	r0, [r7, #12]
+  30:	f7ff fffe 	bl	0 <mySum>
+  34:	6078      	str	r0, [r7, #4]
+    return 0;
+  36:	2300      	movs	r3, #0
+}
+  38:	4618      	mov	r0, r3
+  3a:	3710      	adds	r7, #16
+  3c:	46bd      	mov	sp, r7
+  3e:	bd80      	pop	{r7, pc}

@@ -1,0 +1,749 @@
+﻿\documentclass[12pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{eso-pic}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+
+\newcommand{\addwatermark}{%
+    \AddToShipoutPictureBG{%
+        \AtPageLowerRight{%
+            \raisebox{1.2cm}{%
+                \makebox[0pt][r]{%
+                    \rotatebox{45}{%
+                        \textcolor{gray!20}{\fontsize{12}{14}\selectfont
+                        Varun B Karmikanda\ --\ 261100610029}%
+                    }%
+                }%
+            }%
+        }%
+        \AtPageUpperLeft{%
+            \raisebox{-1.2cm}{%
+                \hspace{1.5cm}\textcolor{white}{Varun B Karmikanda\ --\ 261100610029}%
+            }%
+        }%
+    }%
+}
+\addwatermark
+
+\definecolor{codegray}{gray}{0.95}
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\scriptsize,
+    backgroundcolor=\color{codegray},
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=8pt
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{RTOS LAB}
+\rhead{Assignment 2}
+\cfoot{\thepage}
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\Large\textbf{REAL TIME OPERATING SYSTEM}}\\[0.7cm]
+    {\Large\textbf{RTOS LAB}}\\[1.2cm]
+    {\Huge\textbf{Assignment 2}}\\[2cm]
+    \begin{tabular}{r p{7.5cm}}
+    \Large{Name:}     & {\Large\textbf{Varun B Karmikanda}} \\[0.4cm]
+    \Large{USN:}      & {\Large{261100610029}} \\[0.4cm]
+    \textbf{Program:} & ME Computer Science \& \\[0.1cm]
+                      & Engineering
+\end{tabular}
+    \vfill
+    {\large \today}
+\end{titlepage}
+
+\section*{1. Priority Inversion}
+\textbf{Question:} Demonstrate the classic priority-inversion problem using
+three FreeRTOS tasks.
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Task 1 -- HIGH:} priority
+          \texttt{tskIDLE\_PRIORITY + 3}; blinks PA0 with 500 ms on/off
+          intervals.
+    \item \textbf{Task 2 -- LOW:} priority
+          \texttt{tskIDLE\_PRIORITY + 1}; blinks PA1 with 500 ms on/off
+          intervals and uses the shared binary semaphore.
+    \item \textbf{Task 3 -- MEDIUM:} priority
+          \texttt{tskIDLE\_PRIORITY + 2}; blinks PC13 and busy-waits for
+          500 ms for five cycles, then sleeps for 500 ms.
+\end{itemize}
+
+\textbf{Code:}
+\begin{lstlisting}
+/*
+ * priority-inversion/main.c
+ *
+ * Demonstrates the classic priority-inversion problem:
+ *
+ *   Task1  HIGH  (tskIDLE_PRIORITY + 3)  blinks PA0, 500 ms on/off
+ *   Task2  LOW   (tskIDLE_PRIORITY + 1)  blinks PA1, 500 ms on/off
+ *   Task3  MED   (tskIDLE_PRIORITY + 2)  blinks PC13, busy-wait 500 ms x 5
+ *                                         cycles then sleeps 500 ms once
+ *
+ * PA0 and PA1 are collectively protected by a BINARY SEMAPHORE
+ * (not a mutex).  PC13 is unprotected and Task3 never touches the
+ * semaphore.
+ *
+ * Why a binary semaphore, not xSemaphoreCreateMutex()?
+ * A FreeRTOS mutex has priority inheritance: the instant a high-priority
+ * task blocks on it, the kernel temporarily raises the holder to the
+ * high-priority task's level so it can run and release the mutex.
+ * That's the FIX for priority inversion, not the bug.  A binary
+ * semaphore has zero awareness of task priorities - it will never
+ * bump anyone's priority.  Using it here lets the inversion play out
+ * without any automatic mitigation.
+ *
+ * THE INVERSION SEQUENCE
+ * ----------------------
+ * T=0   Task2 (LOW) wakes, takes the semaphore, starts blinking PA1.
+ *        It immediately vTaskDelay(500) - now it is Blocked.
+ *
+ * T~0   Task3 (MED) wakes, preempts Task2 (MED > LOW), and enters its
+ *        busy-wait loop.  It spins for ~500 ms without ever calling
+ *        vTaskDelay, so it stays in the Running/Ready state and the
+ *        scheduler never picks Task2.
+ *
+ * T~500 Task1 (HIGH) wakes, tries to take the semaphore.
+ *        Task2 still holds it (Task2 has been unable to run and
+ *        release it because Task3 is ahead of it).
+ *        Task1 blocks on the semaphore.
+ *
+ * Result: HIGH is blocked behind LOW, and LOW cannot run because
+ *         MED is busy-waiting.  MED effectively blocks HIGH.
+ *         This is priority inversion.
+ *
+ * Task3 loops 5 times (5 x 500 ms = ~5 s of busy-wait) then finally
+ * calls vTaskDelay(500).  At that point Task2 is the highest Ready
+ * task, runs, toggles PA1, then gives the semaphore.  Task1 unblocks
+ * immediately - it has been waiting the entire 5 s.
+ *
+ * HARDWARE
+ * --------
+ * PA0  - LED1, active-high, external LED + ~330R to GND
+ * PA1  - LED2, active-high, external LED + ~330R to GND
+ * PC13 - onboard LED, active-low
+ */
+#include <stdint.h>
+#include "stm32f103_regs.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+/* ------------------------------------------------------------------ */
+/* Priorities                                                           */
+/* ------------------------------------------------------------------ */
+#define PRIO_LOW    (tskIDLE_PRIORITY + 1)
+#define PRIO_MED    (tskIDLE_PRIORITY + 2)
+#define PRIO_HIGH   (tskIDLE_PRIORITY + 3)
+
+/* ------------------------------------------------------------------ */
+/* Shared resource protection - BINARY SEMAPHORE, not a mutex          */
+/* A mutex would silently fix the inversion via priority inheritance.  */
+/* ------------------------------------------------------------------ */
+static SemaphoreHandle_t xGpioABinarySem;
+
+/* ------------------------------------------------------------------ */
+/* Busy-wait: spins on SysTick for the requested milliseconds.         */
+/* Does NOT call vTaskDelay, so the calling task never leaves Running. */
+/* This is the mechanism that lets Task3 starve Task2.                 */
+/* ------------------------------------------------------------------ */
+static volatile uint32_t g_ticks = 0;   /* incremented by tick hook */
+
+void vApplicationTickHook(void)
+{
+    g_ticks++;
+}
+
+static void busy_wait_ms(uint32_t ms)
+{
+    uint32_t start = g_ticks;
+    while ((g_ticks - start) < ms) {
+        /* spin - deliberately consuming the CPU */
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* GPIO helpers                                                         */
+/* ------------------------------------------------------------------ */
+static void gpio_output_init(GPIO_TypeDef *port, uint32_t pin)
+{
+    volatile uint32_t *cr = (pin < 8) ? &port->CRL : &port->CRH;
+    uint32_t shift = (pin % 8U) * 4U;
+    *cr &= ~(0xFU << shift);
+    *cr |=  (GPIO_CNF_MODE_OUTPUT_PP_2MHZ << shift);
+}
+
+/* ------------------------------------------------------------------ */
+/* Task1 - HIGH priority - blinks PA0 - needs the semaphore            */
+/* ------------------------------------------------------------------ */
+static void task1_high(void *pvParameters)
+{
+    (void)pvParameters;
+    /* give Task2 a head-start so it can acquire the semaphore first */
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    for (;;) {
+        /* --- WAIT for the shared GPIO-A semaphore --- */
+        xSemaphoreTake(xGpioABinarySem, portMAX_DELAY);
+
+        /* PA0 on */
+        GPIOA->ODR |=  (1U << 0);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        /* PA0 off */
+        GPIOA->ODR &= ~(1U << 0);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        xSemaphoreGive(xGpioABinarySem);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Task2 - LOW priority - blinks PA1 - needs the semaphore             */
+/* ------------------------------------------------------------------ */
+static void task2_low(void *pvParameters)
+{
+    (void)pvParameters;
+    for (;;) {
+        /* Task2 acquires the semaphore first (it starts before Task1
+         * and Task3 because of the 10 ms head-start above).
+         * Once Task3 wakes and busy-waits, Task2 cannot run to give
+         * the semaphore back - trapping Task1. */
+        xSemaphoreTake(xGpioABinarySem, portMAX_DELAY);
+
+        /* PA1 on */
+        GPIOA->ODR |=  (1U << 1);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        /* PA1 off */
+        GPIOA->ODR &= ~(1U << 1);
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+        xSemaphoreGive(xGpioABinarySem);
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* Task3 - MED priority - blinks PC13 - no semaphore                   */
+/* Busy-waits 500 ms x 5 cycles (5 s total) then sleeps 500 ms once.  */
+/* The busy-wait is what blocks Task2 from running and releasing the   */
+/* semaphore that Task1 is waiting on.                                 */
+/* ------------------------------------------------------------------ */
+static void task3_med(void *pvParameters)
+{
+    (void)pvParameters;
+    for (;;) {
+        /* --- 5 busy-wait cycles of 500 ms each -------------------- */
+        for (uint32_t i = 0; i < 5; i++) {
+            /* PC13 toggle (active-low, so XOR gives a visible blink) */
+            GPIOC->ODR ^= (1U << 13);
+
+            /* BUSY-WAIT: does NOT yield the CPU - this is the key.
+             * While spinning here, Task2 (which holds the semaphore)
+             * cannot run because Task3 (MED) outranks Task2 (LOW).
+             * Task1 (HIGH) is blocked on the semaphore.
+             * => MED is blocking HIGH through LOW: inversion. */
+            busy_wait_ms(500);
+        }
+
+        /* --- one cooperative sleep to eventually let things flow --- */
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* main                                                                 */
+/* ------------------------------------------------------------------ */
+int main(void)
+{
+    /* enable clocks for GPIOA and GPIOC */
+    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN;
+
+    gpio_output_init(GPIOA, 0);   /* PA0 - Task1 LED */
+    gpio_output_init(GPIOA, 1);   /* PA1 - Task2 LED */
+    gpio_output_init(GPIOC, 13);  /* PC13 - Task3 onboard LED */
+
+    /* BINARY semaphore - deliberately not a mutex */
+    xGpioABinarySem = xSemaphoreCreateBinary();
+    xSemaphoreGive(xGpioABinarySem);   /* start it available */
+
+    xTaskCreate(task1_high, "T1_HIGH", configMINIMAL_STACK_SIZE, NULL, PRIO_HIGH, NULL);
+    xTaskCreate(task2_low,  "T2_LOW",  configMINIMAL_STACK_SIZE, NULL, PRIO_LOW,  NULL);
+    xTaskCreate(task3_med,  "T3_MED",  configMINIMAL_STACK_SIZE, NULL, PRIO_MED,  NULL);
+
+    vTaskStartScheduler();
+
+    for (;;) {}
+}
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask; (void)pcTaskName;
+    for (;;) {}
+}
+\end{lstlisting}
+
+\textbf{Output and observation:}
+Task 2 acquires the binary semaphore and then becomes delayed during its
+blink. Task 3 has a higher priority than Task 2 and busy-waits without
+calling \texttt{vTaskDelay()}, so Task 2 cannot run to release the semaphore.
+When Task 1 attempts to acquire the semaphore, it blocks behind the low
+priority Task 2. Therefore, the medium-priority task indirectly prevents the
+high-priority task from progressing. This is priority inversion.
+
+\textbf{Result:} A binary semaphore does not provide priority inheritance, so
+the priority-inversion behavior is observed.
+
+\newpage
+\section*{2. Shared LED Without Synchronization}
+\textbf{Question:} Run two same-priority tasks that toggle the same GPIO pin
+without a mutex, critical section, or other coordination.
+
+\begin{itemize}[noitemsep]
+    \item \texttt{task1\_toggle\_1hz}: toggles PC13, delays 1000 ms, toggles
+          again, and delays 1000 ms.
+    \item \texttt{task2\_toggle\_2hz}: toggles PC13, delays 500 ms, toggles
+          again, and delays 500 ms.
+\end{itemize}
+
+\textbf{Code:}
+\begin{lstlisting}
+/*
+ * shared-led-no-sync/main.c
+ *
+ * Two tasks, same priority, both toggling the SAME GPIO pin (PC13, the
+ * Bluepill's onboard LED) with no mutex, no critical section, no
+ * coordination between them at all. Each task's loop is now explicit
+ * about on/off rather than a single toggle per iteration:
+ *
+ *   task1_toggle_1hz - on, delay 1000 ms, off, delay 1000 ms
+ *                      -> one complete blink every 2 s
+ *   task2_toggle_2hz - on, delay  500 ms, off, delay  500 ms
+ *                      -> one complete blink every 1 s
+ *
+ * The underlying toggle rate on the pin is unchanged from the simpler
+ * version of this file - this only makes "on" and "off" explicit
+ * instead of letting them fall out of alternating toggles.
+ *
+ * This is deliberately the "wrong" way to share a pin - see the note
+ * at the bottom of this file for what that actually costs you.
+ */
+#include <stdint.h>
+#include "stm32f103_regs.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+
+static void gpio_output_init(GPIO_TypeDef *port, uint32_t pin)
+{
+    volatile uint32_t *cr = (pin < 8) ? &port->CRL : &port->CRH;
+    uint32_t shift = (pin % 8U) * 4U;
+
+    *cr &= ~(0xFU << shift);
+    *cr |=  (GPIO_CNF_MODE_OUTPUT_PP_2MHZ << shift);
+}
+
+static void task1_toggle_1hz(void *pvParameters)
+{
+    (void)pvParameters;
+    for (;;) {
+        GPIOC->ODR ^= (1U << 13);           /* on */
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        GPIOC->ODR ^= (1U << 13);           /* off */
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        /* one full loop iteration = one complete blink, 2000 ms total */
+    }
+}
+
+static void task2_toggle_2hz(void *pvParameters)
+{
+    (void)pvParameters;
+    for (;;) {
+        GPIOC->ODR ^= (1U << 13);           /* on */
+        vTaskDelay(pdMS_TO_TICKS(500));
+        GPIOC->ODR ^= (1U << 13);           /* off */
+        vTaskDelay(pdMS_TO_TICKS(500));
+        /* one full loop iteration = one complete blink, 1000 ms total */
+    }
+}
+
+int main(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
+    gpio_output_init(GPIOC, 13);
+
+    xTaskCreate(task1_toggle_1hz, "task1", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(task2_toggle_2hz, "task2", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;) {
+        /* only reached if vTaskStartScheduler() fails, e.g. out of heap */
+    }
+}
+
+/* Required because FreeRTOSConfig.h sets configCHECK_FOR_STACK_OVERFLOW=2 */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask;
+    (void)pcTaskName;
+    for (;;) {
+    }
+}
+
+/*
+ * What "no synchronization" actually costs here:
+ *
+ * GPIOC->ODR ^= (1U << 13) is NOT a single atomic operation - it compiles
+ * to a load of ODR, an XOR, and a store back to ODR. Both tasks run this
+ * exact sequence on the exact same register.
+ *
+ * Since these two tasks share one priority, a SysTick-driven context
+ * switch can land between the load and the store of either task's
+ * toggle. If task1 is preempted right there, and task2 runs an entire
+ * toggle to completion before task1 resumes, task1 finishes its own
+ * store using the STALE value it loaded before being preempted -
+ * silently undoing task2's toggle. One of the two intended edges on
+ * PC13 is lost, with no error, no warning, and no way to tell from
+ * the code alone that it happened.
+ *
+ * The intended behaviour visually - if nothing ever raced - would be
+ * an LED that spends noticeably more time in one state than the other
+ * (task2's extra mid-second toggle keeps flipping it). What you'll
+ * actually observe, run for long enough, is that pattern occasionally
+ * glitching - a "toggle" that doesn't visibly happen - as this race
+ * resolves the wrong way. It's rare, not visible on every run, and
+ * exactly the kind of bug that a mutex around this read-modify-write
+ * (or simply using GPIOC->BSRR to set/reset the specific bit atomically
+ * from a single write) makes impossible instead of merely unlikely.
+ */
+\end{lstlisting}
+
+\textbf{Output and observation:}
+Both tasks access PC13 independently. The statement
+\texttt{GPIOC->ODR \^{}= (1U << 13)} is a read-modify-write operation rather
+than one atomic GPIO operation. A context switch between the read and write
+can cause one task to store an old value and silently cancel the other task's
+toggle. The LED may therefore show irregular or missing transitions.
+
+\textbf{Result:} The shared LED is accessed without synchronization, producing
+a race condition and nondeterministic LED behavior.
+
+\newpage
+\section*{3. Shared LED With Mutex}
+\textbf{Question:} Protect the complete blink operation of the two shared-LED
+tasks using a mutex.
+
+\textbf{Code:}
+\begin{lstlisting}
+/*
+ * shared-led-mutex/main.c
+ *
+ * Same two tasks as shared-led-no-sync, but this time a mutex is held
+ * across the ENTIRE blink - not just each individual toggle:
+ *
+ *   task1_toggle_1hz - take mutex; on, delay 1000, off, delay 1000; give mutex
+ *   task2_toggle_2hz - take mutex; on, delay  500, off, delay  500; give mutex
+ *
+ * This does fully remove the lost-toggle race from Q V1/V2 - while one
+ * task holds the mutex, the other cannot touch PC13 at all, not even
+ * once. But see the note at the bottom of this file for what that
+ * actually costs: it does not merely fix the race, it changes the
+ * program's behaviour altogether.
+ */
+#include <stdint.h>
+#include "stm32f103_regs.h"
+
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+static SemaphoreHandle_t xLedMutex;
+
+static void gpio_output_init(GPIO_TypeDef *port, uint32_t pin)
+{
+    volatile uint32_t *cr = (pin < 8) ? &port->CRL : &port->CRH;
+    uint32_t shift = (pin % 8U) * 4U;
+
+    *cr &= ~(0xFU << shift);
+    *cr |=  (GPIO_CNF_MODE_OUTPUT_PP_2MHZ << shift);
+}
+
+static void task1_toggle_1hz(void *pvParameters)
+{
+    (void)pvParameters;
+    for (;;) {
+        xSemaphoreTake(xLedMutex, portMAX_DELAY);
+        GPIOC->ODR ^= (1U << 13);           /* on */
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        GPIOC->ODR ^= (1U << 13);           /* off */
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        xSemaphoreGive(xLedMutex);
+        /* the mutex is held for the WHOLE 2 s blink, not just each toggle */
+    }
+}
+
+static void task2_toggle_2hz(void *pvParameters)
+{
+    (void)pvParameters;
+    for (;;) {
+        xSemaphoreTake(xLedMutex, portMAX_DELAY);
+        GPIOC->ODR ^= (1U << 13);           /* on */
+        vTaskDelay(pdMS_TO_TICKS(500));
+        GPIOC->ODR ^= (1U << 13);           /* off */
+        vTaskDelay(pdMS_TO_TICKS(500));
+        xSemaphoreGive(xLedMutex);
+        /* held for the WHOLE 1 s blink, not just each toggle */
+    }
+}
+
+int main(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
+    gpio_output_init(GPIOC, 13);
+
+    xLedMutex = xSemaphoreCreateMutex();
+
+    xTaskCreate(task1_toggle_1hz, "task1", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(task2_toggle_2hz, "task2", configMINIMAL_STACK_SIZE, NULL, tskIDLE_PRIORITY + 1, NULL);
+
+    vTaskStartScheduler();
+
+    for (;;) {
+        /* only reached if vTaskStartScheduler() fails, e.g. out of heap */
+    }
+}
+
+/* Required because FreeRTOSConfig.h sets configCHECK_FOR_STACK_OVERFLOW=2 */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask;
+    (void)pcTaskName;
+    for (;;) {
+    }
+}
+
+/*
+ * What synchronizing the WHOLE blink actually does to the behaviour:
+ *
+ * The lost-toggle race from Q V1/V2 is completely gone - correct, and
+ * exactly what a mutex is for. But holding the mutex across the full
+ * on-delay-off-delay sequence means each task now blocks the OTHER
+ * one out of running its own blink at all, for as long as the first
+ * one's entire cycle takes:
+ *
+ *   - Whichever task acquires the mutex first runs its full blink
+ *     uninterrupted - task1's full 2 s cycle, or task2's full 1 s
+ *     cycle - while the other task sits blocked on xSemaphoreTake(),
+ *     unable to touch the pin even though it isn't actually racing
+ *     with anything during that time.
+ *   - If task1 wins the mutex, task2's intended "twice a second"
+ *     schedule is not just delayed slightly - it is blocked for up to
+ *     2 full seconds, then it runs its own complete 1 s blink, then
+ *     task1 (which has been waiting the whole time) gets its turn.
+ *   - The two tasks end up taking turns running whole blinks back to
+ *     back, rather than interleaving on their own independent
+ *     schedules. Neither task's 1 Hz / 2 Hz timing survives contact
+ *     with the other once the WHOLE operation is what's serialized.
+ *
+ * This is the real trade-off "lock the whole operation" always makes:
+ * it buys correctness on the shared resource by giving up the
+ * independence the two tasks were supposed to have. A narrower fix -
+ * a mutex (or just GPIOC->BSRR) around only the individual toggle,
+ * not the delays around it - would remove the race while leaving each
+ * task free to keep its own timing. Whether that trade-off is
+ * acceptable depends entirely on whether "two independently-timed
+ * blinkers" or "one shared correct sequence" is actually the goal.
+ */
+\end{lstlisting}
+
+\textbf{Output and observation:}
+Only the task holding \texttt{xLedMutex} can access PC13. The mutex is held
+across the complete on-delay-off-delay sequence. Consequently, the lost-toggle
+race is removed. However, the other task must wait for the complete blink
+cycle, so the two independent blink schedules no longer interleave.
+
+\textbf{Result:} The mutex prevents simultaneous access to the shared LED and
+eliminates the race condition. Holding the mutex over the whole blink gives
+correct mutual exclusion but reduces task independence.
+
+\newpage
+\section*{4. Deadlock and Synchronization}
+\textbf{Question:} Create a deadlock and solve the deadlock using the waiting
+method and the binary mutex method.
+
+\subsection*{4.1 Deadlock condition}
+Two tasks use two resources, \texttt{mutex\_A} and \texttt{mutex\_B}, in
+opposite order:
+\begin{itemize}[noitemsep]
+    \item Task 1 takes A and waits for B.
+    \item Task 2 takes B and waits for A.
+\end{itemize}
+Neither task can continue, because each task is waiting for a resource held by
+the other. This is a circular wait and produces deadlock.
+
+\textbf{Code used for the experiment:}
+\begin{lstlisting}
+#include <stdint.h>
+#include "stm32f103_regs.h"
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+SemaphoreHandle_t mutex_A;
+SemaphoreHandle_t mutex_B;
+
+typedef struct {
+    GPIO_TypeDef    *port;
+    uint32_t        pin;
+    uint32_t        period_ms;
+} led_task_args_t;
+
+static const led_task_args_t led_a = { GPIOA, 0, 500 };
+static const led_task_args_t led_b = { GPIOA, 1, 500 };
+
+static void gpio_output_init(GPIO_TypeDef *port, uint32_t pin){
+    volatile uint32_t *cr = (pin < 8) ? &port->CRL : &port->CRH;
+    uint32_t shift = (pin % 8U) * 4U;
+
+    *cr &= ~(0xFU << shift);
+    *cr |= (GPIO_CNF_MODE_OUTPUT_PP_2MHZ << shift);
+}
+
+static void led_task_1(void *pvParameters){
+    const led_task_args_t *args = (const led_task_args_t *)pvParameters;
+
+    for (;;)
+    {
+        xSemaphoreTake(mutex_A, portMAX_DELAY);
+
+        if(xSemaphoreTake(mutex_B, pdMS_TO_TICKS(500)) == pdPASS){
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+            xSemaphoreGive(mutex_B);
+        }
+
+
+        xSemaphoreGive(mutex_A);
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+    }
+}
+
+static void led_task_2(void *pvParameters){
+    const led_task_args_t *args = (const led_task_args_t *)pvParameters;
+
+    for (;;)
+    {
+        xSemaphoreTake(mutex_B, portMAX_DELAY);
+
+        if(xSemaphoreTake(mutex_A, pdMS_TO_TICKS(500)) == pdPASS){
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+            args->port->ODR ^= (1U << args->pin);
+            vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+
+            xSemaphoreGive(mutex_A);
+        }
+
+
+        xSemaphoreGive(mutex_B);
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+    }
+}
+
+int main(void){
+
+    mutex_A = xSemaphoreCreateMutex();
+    mutex_B = xSemaphoreCreateMutex();
+
+    if(mutex_A == NULL || mutex_B == NULL){
+        for(;;) {}
+    }
+
+    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN;
+
+    gpio_output_init(led_a.port, led_a.pin);
+    gpio_output_init(led_b.port, led_b.pin);
+
+    xTaskCreate(led_task_1, "thread_1", configMINIMAL_STACK_SIZE, (void *)&led_a, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task_2, "thread_2", configMINIMAL_STACK_SIZE, (void *)&led_b, tskIDLE_PRIORITY + 1, NULL);
+
+    vTaskStartScheduler();
+
+    for(;;){}
+}
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask;
+    (void)pcTaskName;
+    for (;;) {}
+}
+\end{lstlisting}
+
+\subsection*{4.2 Waiting method}
+The program uses a bounded wait when taking the second mutex:
+\begin{lstlisting}
+if (xSemaphoreTake(mutex_B, pdMS_TO_TICKS(500)) == pdPASS) {
+    /* use the second resource */
+    xSemaphoreGive(mutex_B);
+}
+xSemaphoreGive(mutex_A);
+\end{lstlisting}
+If the second resource is unavailable for 500 ms, the task gives back the
+first resource and retries later. This breaks the circular wait and prevents
+permanent deadlock.
+
+\subsection*{4.3 Binary mutex method}
+The deadlock can also be solved by protecting the complete operation with one
+shared mutex instead of taking two resources in opposite order:
+\begin{lstlisting}
+SemaphoreHandle_t shared_mutex;
+
+void task(void *argument)
+{
+    for (;;) {
+        xSemaphoreTake(shared_mutex, portMAX_DELAY);
+        /* access both resources in one protected section */
+        use_resource_A();
+        use_resource_B();
+        xSemaphoreGive(shared_mutex);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+\end{lstlisting}
+Only one task can enter the protected section at a time, so a task cannot hold
+one resource while waiting for the other. The circular-wait condition is
+removed.
+
+\subsection*{4.4 Output and result}
+With the bounded waiting method, a task that cannot obtain the second mutex
+times out, releases its first mutex, and retries. With the single binary
+mutex method, access is serialized from the beginning. Both methods prevent
+the system from remaining permanently deadlocked.
+
+\end{document}

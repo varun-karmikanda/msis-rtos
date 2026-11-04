@@ -1,0 +1,362 @@
+\documentclass[12pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{eso-pic}
+\usepackage{listings}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+
+\newcommand{\addwatermark}{%
+    \AddToShipoutPictureBG{%
+        \AtPageLowerRight{%
+            \raisebox{1.2cm}{%
+                \makebox[0pt][r]{%
+                    \rotatebox{45}{%
+                        \textcolor{gray!20}{\fontsize{12}{14}\selectfont
+                        Varun B Karmikanda\ --\ 261100610029}%
+                    }%
+                }%
+            }%
+        }%
+        \AtPageUpperLeft{%
+            \raisebox{-1.2cm}{%
+                \hspace{1.5cm}\textcolor{white}{Varun B Karmikanda\ --\ 261100610029}%
+            }%
+        }%
+    }%
+}
+\addwatermark
+
+\definecolor{codegray}{gray}{0.95}
+\lstset{
+    language=C,
+    basicstyle=\ttfamily\footnotesize,
+    backgroundcolor=\color{codegray},
+    frame=single,
+    breaklines=true,
+    showstringspaces=false,
+    numbers=left,
+    numberstyle=\tiny\color{gray},
+    numbersep=8pt
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{RTOS LAB}
+\rhead{Assignment 1}
+\cfoot{\thepage}
+
+\newcommand{\outputimage}[1]{%
+    \begin{center}
+    \includegraphics[width=0.9\textwidth,keepaspectratio]{images/#1}
+    \end{center}
+}
+
+\begin{document}
+
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\Large\textbf{REAL TIME OPERATING SYSTEM}}\\[0.7cm]
+    {\Large\textbf{RTOS LAB}}\\[1.2cm]
+    {\Huge\textbf{Assignment 1}}\\[2cm]
+    \begin{tabular}{r p{7.5cm}}
+    \Large{Name:}     & {\Large\textbf{Varun B Karmikanda}} \\[0.4cm]
+    \Large{USN:}      & {\Large{261100610029}} \\[0.4cm]
+    \textbf{Program:} & ME Computer Science \& \\[0.1cm]
+                      & Engineering
+\end{tabular}
+    \vfill
+    {\large \today}
+\end{titlepage}
+
+\section*{1. LED Blink}
+\textbf{Question:} Blink the onboard LED of the STM32 Blue Pill using
+bare-metal programming.
+
+\textbf{Code:}
+\begin{lstlisting}
+#include <stdint.h>
+#include "stm32f103_regs.h"
+
+static volatile uint32_t g_msticks;
+
+void SysTick_Handler(void)
+{
+    g_msticks++;
+}
+
+static void delay_ms(uint32_t ms)
+{
+    uint32_t target = g_msticks + ms;
+    while (g_msticks < target) {
+    }
+}
+
+int main(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_IOPCEN;
+
+    GPIOC->CRH &= ~(0xFU << 20);
+    GPIOC->CRH |= (GPIO_CNF_MODE_OUTPUT_PP_2MHZ << 20);
+
+    SYSTICK->LOAD = (8000000U / 1000U) - 1U;
+    SYSTICK->VAL = 0;
+    SYSTICK->CTRL = SYSTICK_CTRL_CLKSOURCE |
+                    SYSTICK_CTRL_TICKINT |
+                    SYSTICK_CTRL_ENABLE;
+
+    for (;;) {
+        GPIOC->ODR ^= (1U << 13);
+        delay_ms(1000);
+    }
+}
+\end{lstlisting}
+
+\textbf{Output:} The onboard PC13 LED blinks at a one-second interval.
+
+\newpage
+\section*{2. Three Thread Blink}
+\textbf{Question:} Create three independent FreeRTOS tasks, each blinking
+its own LED at a fixed interval:
+\begin{itemize}[noitemsep]
+    \item PC13: 1 second
+    \item PA0: 2 seconds
+    \item PA1: 3 seconds
+\end{itemize}
+
+\textbf{Code:}
+\begin{lstlisting}
+#include <stdint.h>
+#include "stm32f103_regs.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+typedef struct {
+    GPIO_TypeDef *port;
+    uint32_t pin;
+    uint32_t period_ms;
+} led_task_args_t;
+
+static const led_task_args_t led_a = { GPIOC, 13, 1000 };
+static const led_task_args_t led_b = { GPIOA, 0, 2000 };
+static const led_task_args_t led_c = { GPIOA, 1, 3000 };
+static const led_task_args_t led_d = { GPIOA, 2, 4000 };
+static const led_task_args_t led_e = { GPIOA, 3, 5000 };
+
+static void gpio_output_init(GPIO_TypeDef *port, uint32_t pin)
+{
+    volatile uint32_t *cr = (pin < 8) ? &port->CRL : &port->CRH;
+    uint32_t shift = (pin % 8U) * 4U;
+    *cr &= ~(0xFU << shift);
+    *cr |= (GPIO_CNF_MODE_OUTPUT_PP_2MHZ << shift);
+}
+
+static void led_task(void *pvParameters)
+{
+    const led_task_args_t *args =
+        (const led_task_args_t *)pvParameters;
+    for (;;) {
+        args->port->ODR ^= (1U << args->pin);
+        vTaskDelay(pdMS_TO_TICKS(args->period_ms));
+    }
+}
+
+int main(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN;
+    gpio_output_init(led_a.port, led_a.pin);
+    gpio_output_init(led_b.port, led_b.pin);
+    gpio_output_init(led_c.port, led_c.pin);
+    gpio_output_init(led_d.port, led_d.pin);
+    gpio_output_init(led_e.port, led_e.pin);
+
+    xTaskCreate(led_task, "led_1s", configMINIMAL_STACK_SIZE,
+                (void *)&led_a, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_2s", configMINIMAL_STACK_SIZE,
+                (void *)&led_b, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_3s", configMINIMAL_STACK_SIZE,
+                (void *)&led_c, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_4s", configMINIMAL_STACK_SIZE,
+                (void *)&led_d, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_5s", configMINIMAL_STACK_SIZE,
+                (void *)&led_e, tskIDLE_PRIORITY + 1, NULL);
+
+    vTaskStartScheduler();
+    for (;;) {
+    }
+}
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask;
+    (void)pcTaskName;
+    for (;;) {
+    }
+}
+\end{lstlisting}
+
+\textbf{Output:} The five configured task intervals are observed on the
+connected LEDs.
+
+\newpage
+\section*{3. Three Thread Priority Switch}
+\textbf{Question:} Create independent LED tasks with different priorities and
+observe priority-based scheduling.
+
+\textbf{Code:}
+\begin{lstlisting}
+#include <stdint.h>
+#include "stm32f103_regs.h"
+#include "FreeRTOS.h"
+#include "task.h"
+
+static volatile uint32_t g_msticks;
+
+typedef struct {
+    GPIO_TypeDef *port;
+    uint32_t pin;
+    uint32_t period_ms;
+} led_task_args_t;
+
+void vApplicationTickHook(void)
+{
+    g_msticks++;
+}
+
+static const led_task_args_t led_a = { GPIOA, 3, 500 };
+static const led_task_args_t led_b = { GPIOA, 0, 450 };
+static const led_task_args_t led_c = { GPIOA, 1, 400 };
+static const led_task_args_t led_d = { GPIOA, 2, 350 };
+
+static void delay_ms(uint32_t ms)
+{
+    uint32_t target = g_msticks + ms;
+    while (g_msticks < target) {
+    }
+}
+
+static void gpio_output_init(GPIO_TypeDef *port, uint32_t pin)
+{
+    volatile uint32_t *cr = (pin < 8) ? &port->CRL : &port->CRH;
+    uint32_t shift = (pin % 8U) * 4U;
+    *cr &= ~(0xFU << shift);
+    *cr |= (GPIO_CNF_MODE_OUTPUT_PP_2MHZ << shift);
+}
+
+static void led_task(void *pvParameters)
+{
+    const led_task_args_t *args =
+        (const led_task_args_t *)pvParameters;
+    for (;;) {
+        args->port->ODR ^= (1U << args->pin);
+        delay_ms(args->period_ms);
+    }
+}
+
+int main(void)
+{
+    RCC->APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN;
+    gpio_output_init(led_a.port, led_a.pin);
+    gpio_output_init(led_b.port, led_b.pin);
+    gpio_output_init(led_c.port, led_c.pin);
+    gpio_output_init(led_d.port, led_d.pin);
+
+    xTaskCreate(led_task, "led_1s", configMINIMAL_STACK_SIZE,
+                (void *)&led_a, tskIDLE_PRIORITY + 3, NULL);
+    xTaskCreate(led_task, "led_2s", configMINIMAL_STACK_SIZE,
+                (void *)&led_b, tskIDLE_PRIORITY + 2, NULL);
+    xTaskCreate(led_task, "led_3s", configMINIMAL_STACK_SIZE,
+                (void *)&led_c, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_4s", configMINIMAL_STACK_SIZE,
+                (void *)&led_d, tskIDLE_PRIORITY + 0, NULL);
+
+    vTaskStartScheduler();
+    for (;;) {
+    }
+}
+
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void)xTask;
+    (void)pcTaskName;
+    for (;;) {
+    }
+}
+
+void vApplicationIdleHook(void)
+{
+    __asm volatile ("wfi");
+}
+\end{lstlisting}
+
+\textbf{Output:} The higher-priority task executes first whenever multiple
+tasks are ready.
+
+\newpage
+\section*{4. Recursive and Addition Programs: GDB Trace and Debugging}
+\textbf{Question:} Trace the recursive and addition programs using GDB output
+and debug them.
+
+\subsection*{4.1 Recursive Program}
+
+\textbf{Code:}
+\begin{lstlisting}
+int rec_sum(int i)
+{
+    if (i <= 1)
+        return i;
+    else
+        return i + rec_sum(i - 1);
+}
+
+int main(void)
+{
+    int sum = 0;
+    sum = rec_sum(10);
+    return 0;
+}
+\end{lstlisting}
+
+\textbf{Output:} The calls proceed from \texttt{rec\_sum(10)} to
+\texttt{rec\_sum(1)} and return through the stack. The final value is
+\texttt{sum = 55}.
+\outputimage{recursion-gdb-1.png}
+\outputimage{recursion-gdb-2.png}
+\outputimage{recursion-gdb-3.png}
+
+\textbf{Trace summary:}
+\[
+1,\ 3,\ 6,\ 10,\ 15,\ 21,\ 28,\ 36,\ 45,\ 55
+\]
+The ARM disassembly shows the function prologue, stack-frame allocation,
+argument storage, recursive branch, and return through register
+\texttt{r0}.
+
+\subsection*{4.2 Addition Program}
+
+\textbf{Code:}
+\begin{lstlisting}
+int mySum(int a, int b)
+{
+    return a + b;
+}
+
+int main(void)
+{
+    int i = 5, j = 10, sum = 0;
+    sum = mySum(i, j);
+    return 0;
+}
+\end{lstlisting}
+
+\textbf{Output:} The values \(i=5\) and \(j=10\) are passed in registers
+\texttt{r0} and \texttt{r1}. The function returns \(15\) in \texttt{r0},
+which is stored in \texttt{sum}.
+\outputimage{sum-gdb.png}
+
+\end{document}
