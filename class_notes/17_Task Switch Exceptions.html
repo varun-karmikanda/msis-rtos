@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SysTick, PendSV, and SVC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans:ital@1&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --accent:  #35618C;
+    --accent-dim: #C9D9E6;
+    --code-bg: #232830;
+    --code-ink:#D7DCE1;
+    --code-dim:#7C8794;
+    --code-acc:#8FBCE6;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:var(--sans); font-size:17px; line-height:1.65;
+    -webkit-font-smoothing:antialiased;
+  }
+  article{ max-width:700px; margin:0 auto; padding:64px 24px 100px; }
+
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-family:var(--sans); font-weight:700; font-size:33px; line-height:1.25; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:18px; color:var(--ink-soft); max-width:56ch; margin:0 0 40px; }
+  .dek em{ color:var(--ink); font-style:normal; border-bottom:1.5px solid var(--accent-dim); }
+
+  p{ margin:0 0 18px; }
+  h2{ font-family:var(--sans); font-size:22px; font-weight:700; margin:52px 0 6px; letter-spacing:-.01em; }
+  h2 code{ font-size:20px; }
+  .sub{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin:0 0 18px; }
+  h3{ font-family:var(--sans); font-size:15.5px; font-weight:700; margin:28px 0 10px; }
+
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.12em .38em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+  a{ color:var(--accent); }
+
+  hr.div{ border:none; border-top:1px solid var(--rule); margin:56px 0; }
+
+  /* diagrams */
+  figure{ margin:26px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-top:10px; }
+
+  /* code listings */
+  .listing{
+    background:var(--code-bg); border-radius:9px; padding:18px 20px;
+    margin:20px 0 24px; overflow-x:auto;
+  }
+  .listing .fname{ font-family:var(--mono); font-size:11.5px; color:var(--code-dim); margin:0 0 12px; }
+  .listing pre{ margin:0; }
+  .listing code{
+    background:none; padding:0; color:var(--code-ink); font-size:13px; line-height:1.75;
+    display:block; white-space:pre;
+  }
+  .cm{ color:var(--code-dim); }      /* comment */
+  .rg{ color:var(--code-acc); }      /* register / operand emphasis */
+  .kw{ color:#E3B778; }              /* mnemonic */
+
+  .aside{
+    border-left:2px solid var(--accent-dim); padding-left:16px; margin:22px 0;
+    font-size:15.5px; color:var(--ink-soft);
+  }
+  .aside b{ color:var(--ink); font-weight:600; }
+
+  .footline{ margin-top:64px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+</style>
+</head>
+<body>
+<article>
+
+  <p class="byline">stm32f103 workspace notes</p>
+  <h1>SysTick, PendSV, and SVC</h1>
+  <p class="dek">Three exception handlers do all of FreeRTOS's task switching on a Cortex-M3. One <em>decides</em>, one <em>acts</em>, and one only ever runs <em>once</em>. Here's what each of them actually does, in the order they actually do it.</p>
+
+  <p>None of this lives in <code>startup_stm32f103.s</code>. Your startup file only reserves three slots in the vector table — weak symbols pointing at a default handler, same as every other entry. What actually runs in those slots comes entirely from FreeRTOS's <code>port.c</code>, wired in by the three <code>#define</code> lines in <code>FreeRTOSConfig.h</code>. This page walks through what's on the other end of that wiring.</p>
+
+  <figure>
+    <svg viewBox="0 0 640 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t0">
+      <title id="t0">Overview: SVC runs once at boot, then SysTick and PendSV alternate forever</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <!-- SVC once -->
+        <rect x="10" y="20" width="130" height="54" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="75" y="43" text-anchor="middle" fill="#1E2125" font-weight="600">SVC</text>
+        <text x="75" y="60" text-anchor="middle" fill="#5B6167" font-size="10.5">once, at boot</text>
+
+        <path d="M140,47 H185" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar)"/>
+
+        <!-- steady state loop box -->
+        <rect x="185" y="10" width="445" height="130" rx="8" fill="none" stroke="#E3E4DF" stroke-width="1.3" stroke-dasharray="4,3"/>
+        <text x="205" y="30" fill="#9198A0" font-size="10.5">steady state — repeats forever</text>
+
+        <rect x="215" y="50" width="150" height="54" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="290" y="73" text-anchor="middle" fill="#1E2125" font-weight="600">SysTick</text>
+        <text x="290" y="90" text-anchor="middle" fill="#5B6167" font-size="10.5">every 1 ms — decides</text>
+
+        <path d="M365,77 H440" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar)"/>
+        <text x="402" y="70" text-anchor="middle" fill="#9198A0" font-size="9.5">pends</text>
+
+        <rect x="440" y="50" width="150" height="54" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="515" y="73" text-anchor="middle" fill="#1E2125" font-weight="600">PendSV</text>
+        <text x="515" y="90" text-anchor="middle" fill="#5B6167" font-size="10.5">on demand — switches</text>
+
+        <path d="M515,104 C515,125 290,125 290,104" stroke="#9198A0" stroke-width="1.2" fill="none" marker-end="url(#ar)"/>
+      </g>
+      <defs>
+        <marker id="ar" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker>
+      </defs>
+    </svg>
+  </figure>
+
+  <hr class="div">
+
+  <h2><code>SysTick_Handler</code></h2>
+  <p class="sub">fires every tick · decides</p>
+
+  <p>Every millisecond the SysTick timer expires and this handler runs. Its only job is to ask "did anything change that the scheduler needs to act on?" — a task's <code>vTaskDelay()</code> expiring, a time slice running out. It never touches a stack pointer and never decides <em>which</em> task runs next. It just flags that a decision needs making, and lets a separate exception carry it out.</p>
+
+  <figure>
+    <svg viewBox="0 0 560 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t1">
+      <title id="t1">Flow of SysTick_Handler</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12.5">
+        <rect x="180" y="10" width="200" height="42" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="280" y="36" text-anchor="middle">SysTick exception fires</text>
+
+        <path d="M280,52 V80" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar2)"/>
+        <rect x="150" y="80" width="260" height="42" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="280" y="106" text-anchor="middle">disable interrupts, briefly</text>
+
+        <path d="M280,122 V150" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar2)"/>
+        <rect x="120" y="150" width="320" height="42" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="280" y="176" text-anchor="middle">xTaskIncrementTick()</text>
+
+        <path d="M280,192 V214" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar2)"/>
+        <path d="M280,214 L340,240 L280,266 L220,240 Z" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="280" y="244" text-anchor="middle" font-size="11">switch needed?</text>
+
+        <path d="M340,240 H480" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar2)"/>
+        <text x="410" y="233" text-anchor="middle" font-size="10.5" fill="#5B6167">yes</text>
+        <rect x="480" y="219" width="70" height="42" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="515" y="238" text-anchor="middle" font-size="10">pend</text>
+        <text x="515" y="251" text-anchor="middle" font-size="10">PendSV</text>
+
+        <path d="M220,240 H60" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar2)"/>
+        <text x="140" y="233" text-anchor="middle" font-size="10.5" fill="#5B6167">no</text>
+        <rect x="10" y="219" width="70" height="42" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="45" y="244" text-anchor="middle" font-size="10">return</text>
+      </g>
+      <defs><marker id="ar2" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker></defs>
+    </svg>
+  </figure>
+
+  <div class="listing">
+    <p class="fname">FreeRTOS/portable/GCC/ARM_CM3/port.c</p>
+    <pre><code><span class="kw">void</span> xPortSysTickHandler( <span class="kw">void</span> )
+{
+    <span class="cm">/* SysTick sits at the lowest priority in the system (see</span>
+<span class="cm">     * configLIBRARY_LOWEST_INTERRUPT_PRIORITY in FreeRTOSConfig.h) - by</span>
+<span class="cm">     * the time this runs, nothing more urgent is waiting, so there's</span>
+<span class="cm">     * nothing to save/restore around the next line. */</span>
+    portDISABLE_INTERRUPTS();
+
+    <span class="cm">/* bump the tick count; walk the delayed-task list for anyone whose</span>
+<span class="cm">     * wake time just arrived; returns true if a switch is warranted */</span>
+    <span class="kw">if</span>( xTaskIncrementTick() != pdFALSE )
+    {
+        <span class="cm">/* don't switch here - just ask PendSV to. one register write. */</span>
+        portNVIC_INT_CTRL_REG = portNVIC_PENDSVSET_BIT;
+    }
+
+    portENABLE_INTERRUPTS();
+}</code></pre>
+  </div>
+
+  <hr class="div">
+
+  <h2><code>PendSV_Handler</code></h2>
+  <p class="sub">fires on demand · switches</p>
+
+  <p>This is the actual context switch — the eleven instructions that make it look, from every task's point of view, like it was never interrupted. ARM built PendSV specifically for this: it's the one exception you can pend from software, and it's deliberately parked at the lowest priority alongside SysTick, so it only ever runs once every genuinely higher-priority interrupt has finished. That's what stops a switch from ever happening mid-way through something more urgent.</p>
+
+  <figure>
+    <svg viewBox="0 0 560 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t2">
+      <title id="t2">Flow of PendSV_Handler</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+        <rect x="170" y="6" width="220" height="38" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="280" y="30" text-anchor="middle">PendSV pending bit is set</text>
+
+        <path d="M280,44 V66" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar3)"/>
+        <rect x="130" y="66" width="300" height="38" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="280" y="90" text-anchor="middle">save r4-r11 onto outgoing task's stack</text>
+
+        <path d="M280,104 V126" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar3)"/>
+        <rect x="130" y="126" width="300" height="38" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="280" y="150" text-anchor="middle">stash that stack pointer into its TCB</text>
+
+        <path d="M280,164 V186" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar3)"/>
+        <rect x="130" y="186" width="300" height="38" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="280" y="210" text-anchor="middle">bl vTaskSwitchContext()</text>
+        <text x="280" y="222" text-anchor="middle" font-size="9.5" fill="#5B6167">plain C - picks the new pxCurrentTCB</text>
+
+        <path d="M280,232 V254" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar3)"/>
+        <rect x="130" y="254" width="300" height="38" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="280" y="278" text-anchor="middle">load new task's stack pointer from its TCB</text>
+
+        <path d="M280,292 V314" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar3)"/>
+        <rect x="130" y="314" width="300" height="38" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="280" y="338" text-anchor="middle">pop r4-r11 off the new task's stack</text>
+
+        <path d="M280,352 V366" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar4)"/>
+        <text x="280" y="378" text-anchor="middle" font-weight="600">bx lr &#8594; hardware pops the rest, resumes new task</text>
+      </g>
+      <defs>
+        <marker id="ar3" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker>
+        <marker id="ar4" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#1E2125"/></marker>
+      </defs>
+    </svg>
+  </figure>
+
+  <div class="listing">
+    <p class="fname">FreeRTOS/portable/GCC/ARM_CM3/port.c — xPortPendSVHandler (naked)</p>
+    <pre><code>mrs   <span class="rg">r0</span>, <span class="rg">psp</span>              <span class="cm">; r0 = outgoing task's process stack pointer</span>
+isb                        <span class="cm">; make sure that read has actually landed</span>
+
+ldr   <span class="rg">r3</span>, =pxCurrentTCB    <span class="cm">; r3 = &amp;pxCurrentTCB (the pointer variable itself)</span>
+ldr   <span class="rg">r2</span>, [<span class="rg">r3</span>]          <span class="cm">; r2 = pxCurrentTCB  (the outgoing task's TCB)</span>
+
+stmdb <span class="rg">r0</span>!, {r4-r11}    <span class="cm">; push r4-r11 onto THAT task's own stack</span>
+str   <span class="rg">r0</span>, [<span class="rg">r2</span>]          <span class="cm">; TCB-&gt;pxTopOfStack = r0  (first member of the struct)</span>
+
+stmdb <span class="rg">sp</span>!, {r3, r14}   <span class="cm">; save r3 and LR on PendSV's own stack, around the C call</span>
+mov   <span class="rg">r0</span>, #configMAX_SYSCALL_INTERRUPT_PRIORITY
+msr   <span class="rg">basepri</span>, <span class="rg">r0</span>       <span class="cm">; mask anything that's allowed to touch the ready lists</span>
+
+bl    vTaskSwitchContext  <span class="cm">; plain C - updates pxCurrentTCB to the new task</span>
+
+mov   <span class="rg">r0</span>, #0
+msr   <span class="rg">basepri</span>, <span class="rg">r0</span>       <span class="cm">; unmask again</span>
+ldmia <span class="rg">sp</span>!, {r3, r14}   <span class="cm">; restore r3, LR</span>
+
+ldr   <span class="rg">r1</span>, [<span class="rg">r3</span>]          <span class="cm">; r1 = pxCurrentTCB  - now the NEW task</span>
+ldr   <span class="rg">r0</span>, [<span class="rg">r1</span>]          <span class="cm">; r0 = new task's saved stack pointer</span>
+ldmia <span class="rg">r0</span>!, {r4-r11}    <span class="cm">; pop r4-r11 back off ITS stack</span>
+
+msr   <span class="rg">psp</span>, <span class="rg">r0</span>          <span class="cm">; PSP now points into the new task's stack</span>
+isb
+bx    <span class="rg">r14</span>              <span class="cm">; exception return - hw auto-pops r0-r3/r12/PC/xPSR</span>
+                           <span class="cm">;   from the NEW task's stack. it just resumes.</span></code></pre>
+  </div>
+
+  <p class="aside">The two <code>msr basepri</code> lines are worth noticing: PendSV briefly raises the interrupt mask <em>only</em> around the call into <code>vTaskSwitchContext()</code> — the one moment it's actually mutating the ready lists — and drops it again immediately after. Everything before and after that is either pure register shuffling or touches only the one task's own stack, so it doesn't need protecting.</p>
+
+  <hr class="div">
+
+  <h2><code>SVC_Handler</code></h2>
+  <p class="sub">fires exactly once · bootstraps</p>
+
+  <p>PendSV's whole trick depends on there being an <em>outgoing</em> task to save. The very first time the scheduler starts, there isn't one — nothing has run under FreeRTOS yet. So starting the scheduler doesn't go through PendSV at all; it goes through SVC, once, to fake that first switch.</p>
+
+  <p>The setup for it happens in <code>prvPortStartFirstTask()</code>, called from <code>xPortStartScheduler()</code>:</p>
+
+  <div class="listing">
+    <p class="fname">port.c — prvPortStartFirstTask (naked)</p>
+    <pre><code>ldr  <span class="rg">r0</span>, =0xE000ED08   <span class="cm">; address of VTOR, the Vector Table Offset Register</span>
+ldr  <span class="rg">r0</span>, [<span class="rg">r0</span>]          <span class="cm">; r0 = the vector table's base address</span>
+ldr  <span class="rg">r0</span>, [<span class="rg">r0</span>]          <span class="cm">; r0 = word[0] of that table = the reset stack top</span>
+msr  <span class="rg">msp</span>, <span class="rg">r0</span>          <span class="cm">; put the Main Stack Pointer back where reset left it</span>
+
+cpsie i                  <span class="cm">; unmask interrupts  (clear PRIMASK)</span>
+cpsie f                  <span class="cm">; unmask faults      (clear FAULTMASK)</span>
+dsb
+isb
+svc  0                   <span class="cm">; --- trigger the SVC exception ---</span>
+nop</code></pre>
+  </div>
+
+  <p>That single <code>svc 0</code> is the only place in the entire codebase this handler is ever invoked from:</p>
+
+  <figure>
+    <svg viewBox="0 0 560 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t3">
+      <title id="t3">Flow of the one-time SVC bootstrap</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <rect x="30" y="10" width="500" height="36" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="280" y="33" text-anchor="middle">xTaskCreate() x N &#8594; every task gets a forged initial stack frame</text>
+
+        <path d="M280,46 V68" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar5)"/>
+        <rect x="30" y="68" width="500" height="36" rx="6" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="280" y="91" text-anchor="middle">vTaskStartScheduler() &#8594; prvPortStartFirstTask() &#8594; svc 0</text>
+
+        <path d="M280,104 V126" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar5)"/>
+        <rect x="80" y="126" width="400" height="36" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="280" y="149" text-anchor="middle">vPortSVCHandler: load the FIRST task's forged frame</text>
+
+        <path d="M280,162 V184" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar5)"/>
+        <rect x="80" y="184" width="400" height="36" rx="6" fill="none" stroke="#35618C" stroke-width="1.3"/>
+        <text x="280" y="207" text-anchor="middle">exception return &#8594; lands at that task's entry function</text>
+
+        <path d="M280,220 V236" stroke="#9198A0" stroke-width="1.2" marker-end="url(#ar6)"/>
+        <text x="280" y="248" text-anchor="middle" font-weight="600">every switch after this point is PendSV, not SVC</text>
+      </g>
+      <defs>
+        <marker id="ar5" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker>
+        <marker id="ar6" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#1E2125"/></marker>
+      </defs>
+    </svg>
+  </figure>
+
+  <div class="listing">
+    <p class="fname">port.c — vPortSVCHandler (naked)</p>
+    <pre><code>ldr  <span class="rg">r3</span>, =pxCurrentTCB   <span class="cm">; r3 = &amp;pxCurrentTCB</span>
+ldr  <span class="rg">r1</span>, [<span class="rg">r3</span>]          <span class="cm">; r1 = pxCurrentTCB - whichever task the scheduler</span>
+                           <span class="cm">;   already chose to run first</span>
+ldr  <span class="rg">r0</span>, [<span class="rg">r1</span>]          <span class="cm">; r0 = its saved stack pointer - this is the FAKE</span>
+                           <span class="cm">;   frame pxPortInitialiseStack() built at create-time</span>
+ldmia <span class="rg">r0</span>!, {r4-r11}   <span class="cm">; pop the fake r4-r11 (dummy values - never real,</span>
+                           <span class="cm">;   doesn't matter, nothing depends on their contents)</span>
+msr  <span class="rg">psp</span>, <span class="rg">r0</span>          <span class="cm">; PSP now points at what's left of that fake frame -</span>
+                           <span class="cm">;   laid out to look exactly like a hardware exception frame</span>
+isb
+
+mov  <span class="rg">r0</span>, #0
+msr  <span class="rg">basepri</span>, <span class="rg">r0</span>       <span class="cm">; make sure nothing is left masked</span>
+
+orr  <span class="rg">r14</span>, #0xd          <span class="cm">; force EXC_RETURN to "Thread mode, use PSP"</span>
+bx   <span class="rg">r14</span>              <span class="cm">; exception return - hw pops r0-r3/r12/PC/xPSR from</span>
+                           <span class="cm">;   the fake frame. PC was set to the task's entry point,</span>
+                           <span class="cm">;   so execution lands there as if it had always been running.</span></code></pre>
+  </div>
+
+  <p>Notice the shape: it's the second half of <code>PendSV</code>, almost verbatim — load stack pointer, pop <code>r4-r11</code>, exception return. There's no "save the old context" step, because there is no old context. The whole design of <code>SVC</code> here is borrowing <code>PendSV</code>'s restore path and skipping its save path, precisely because this only ever needs to run once.</p>
+
+  <div class="footline">stm32f103 workspace notes &middot; grounded in FreeRTOS-Kernel/portable/GCC/ARM_CM3/port.c</div>
+
+</article>
+</body>
+</html>

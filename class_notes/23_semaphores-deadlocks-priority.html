@@ -1,0 +1,1255 @@
+<title>FreeRTOS Sync & Scheduling</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&family=Merriweather+Sans:wght@400;700&display=swap">
+
+<style>
+/* ─── Design tokens ─────────────────────────────────────────────────────────
+   Layout: sticky TOC sidebar + main content column, collapses to single on mobile
+   Palette: light paper bg, slate ink, teal accent, amber warn, rose danger    */
+:root {
+  --bg:        #F7F6F2;
+  --bg-card:   #FFFFFF;
+  --bg-code:   #F0EFE9;
+  --border:    #DDD9CE;
+  --fg:        #1E1C18;
+  --fg-muted:  #6B6660;
+  --accent:    #0A7B6C;
+  --accent-lt: #E3F5F2;
+  --amber:     #B85C00;
+  --amber-lt:  #FFF4E5;
+  --rose:      #C0273A;
+  --rose-lt:   #FFF0F2;
+  --blue:      #1A5FA8;
+  --blue-lt:   #EBF3FF;
+  --toc-w:     240px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#1A1917; --bg-card:#242220; --bg-code:#2A2826; --border:#3A3835;
+    --fg:#EDE9E0; --fg-muted:#9A948C; --accent:#2BB8A4; --accent-lt:#0E2E2A;
+    --amber:#E08A3C; --amber-lt:#2A1D0A; --rose:#E8566A; --rose-lt:#2E0D12;
+    --blue:#5B9BDB; --blue-lt:#0E1E34; color-scheme:dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#1A1917; --bg-card:#242220; --bg-code:#2A2826; --border:#3A3835;
+  --fg:#EDE9E0; --fg-muted:#9A948C; --accent:#2BB8A4; --accent-lt:#0E2E2A;
+  --amber:#E08A3C; --amber-lt:#2A1D0A; --rose:#E8566A; --rose-lt:#2E0D12;
+  --blue:#5B9BDB; --blue-lt:#0E1E34; color-scheme:dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; scroll-behavior: smooth; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: 'Inter', system-ui, sans-serif;
+  line-height: 1.65;
+  display: flex; flex-direction: column;
+  min-height: 100%;
+  padding-left: max(0px, env(safe-area-inset-left, 0px));
+  padding-right: max(0px, env(safe-area-inset-right, 0px));
+}
+
+/* ─── Top bar ─── */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  padding: 0 max(16px, env(safe-area-inset-left, 0px));
+  display: flex; align-items: center; justify-content: space-between;
+  height: 52px;
+}
+.topbar-title {
+  font-family: 'Merriweather Sans', sans-serif;
+  font-size: 0.85rem; font-weight: 700;
+  color: var(--accent); letter-spacing: 0.04em; text-transform: uppercase;
+}
+.topbar-sub { font-size: 0.75rem; color: var(--fg-muted); }
+.breadcrumb { display: flex; gap: 4px; align-items: center; font-size: 0.7rem; color: var(--fg-muted); }
+.breadcrumb span { color: var(--fg); font-weight: 600; }
+
+/* ─── Layout shell ─── */
+.shell {
+  display: flex; flex: 1; align-items: flex-start;
+  max-width: 1140px; margin: 0 auto; width: 100%;
+  padding: 0 max(16px, env(safe-area-inset-left, 0px));
+  padding-block: 0;
+  gap: 32px;
+}
+
+/* ─── Sidebar TOC ─── */
+.sidebar {
+  width: var(--toc-w); flex-shrink: 0;
+  position: sticky; top: 52px;
+  max-height: calc(100vh - 52px);
+  overflow-y: auto;
+  padding: 24px 0 40px;
+  scrollbar-width: thin;
+}
+.toc-group { margin-bottom: 20px; }
+.toc-group-label {
+  font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--fg-muted);
+  padding: 0 4px; margin-bottom: 6px;
+}
+.toc-link {
+  display: block; padding: 4px 8px;
+  font-size: 0.8rem; color: var(--fg-muted);
+  text-decoration: none; border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+  border-left: 2px solid transparent;
+}
+.toc-link:hover { background: var(--accent-lt); color: var(--accent); }
+.toc-link.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-lt); font-weight: 500; }
+.toc-sub { padding-left: 14px; font-size: 0.75rem; }
+
+/* ─── Main content ─── */
+main { flex: 1; min-width: 0; padding: 32px 0 80px; }
+
+/* ─── Section header ─── */
+.section-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 24px; margin-top: 48px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid var(--border);
+}
+.section-header:first-child { margin-top: 0; }
+.section-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem; font-weight: 600;
+  color: var(--bg); background: var(--accent);
+  padding: 2px 8px; border-radius: 3px;
+  letter-spacing: 0.06em;
+}
+.section-title {
+  font-family: 'Merriweather Sans', sans-serif;
+  font-size: 1.3rem; font-weight: 700; color: var(--fg);
+}
+
+h3 {
+  font-family: 'Merriweather Sans', sans-serif;
+  font-size: 1rem; font-weight: 700;
+  color: var(--fg); margin: 28px 0 10px;
+}
+h4 {
+  font-size: 0.85rem; font-weight: 600;
+  color: var(--fg-muted); text-transform: uppercase;
+  letter-spacing: 0.07em; margin: 20px 0 8px;
+}
+p { margin-bottom: 12px; max-width: 68ch; }
+
+/* ─── Cards ─── */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 22px;
+  margin-bottom: 20px;
+}
+.card-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+  margin-bottom: 20px;
+}
+@media (max-width: 600px) { .card-grid { grid-template-columns: 1fr; } }
+
+.info-card { background: var(--blue-lt); border-color: var(--blue); border-left-width: 4px; }
+.warn-card { background: var(--amber-lt); border-color: var(--amber); border-left-width: 4px; }
+.danger-card { background: var(--rose-lt); border-color: var(--rose); border-left-width: 4px; }
+.ok-card { background: var(--accent-lt); border-color: var(--accent); border-left-width: 4px; }
+
+.card-label {
+  font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; margin-bottom: 4px;
+}
+.info-card .card-label { color: var(--blue); }
+.warn-card .card-label { color: var(--amber); }
+.danger-card .card-label { color: var(--rose); }
+.ok-card .card-label { color: var(--accent); }
+
+/* ─── Semaphore type chips ─── */
+.sem-grid {
+  display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+  margin: 16px 0 24px;
+}
+@media (max-width: 580px) { .sem-grid { grid-template-columns: 1fr; } }
+
+.sem-card {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px;
+  border-top: 3px solid var(--accent);
+}
+.sem-card.binary { border-top-color: var(--blue); }
+.sem-card.mutex  { border-top-color: var(--accent); }
+.sem-card.recmut { border-top-color: var(--amber); }
+.sem-card.counting { border-top-color: var(--rose); }
+.sem-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem; font-weight: 600; margin-bottom: 4px;
+}
+.sem-card.binary  .sem-name { color: var(--blue); }
+.sem-card.mutex   .sem-name { color: var(--accent); }
+.sem-card.recmut  .sem-name { color: var(--amber); }
+.sem-card.counting .sem-name { color: var(--rose); }
+.sem-attr { font-size: 0.78rem; color: var(--fg-muted); margin-top: 6px; }
+.badge {
+  display: inline-block; font-size: 0.62rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 1px 6px; border-radius: 3px; margin-right: 3px;
+}
+.badge-yes { background: var(--accent-lt); color: var(--accent); }
+.badge-no  { background: var(--rose-lt); color: var(--rose); }
+
+/* ─── Code ─── */
+pre, code {
+  font-family: 'JetBrains Mono', monospace;
+}
+code {
+  font-size: 0.8rem; background: var(--bg-code);
+  padding: 1px 5px; border-radius: 3px;
+  color: var(--accent);
+}
+pre {
+  background: var(--bg-code); border: 1px solid var(--border);
+  border-radius: 6px; padding: 16px;
+  overflow-x: auto; font-size: 0.78rem;
+  line-height: 1.6; margin: 12px 0 20px;
+}
+pre code { background: none; padding: 0; }
+
+/* ─── Table ─── */
+.tbl-wrap { overflow-x: auto; margin: 12px 0 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+th {
+  background: var(--bg-code); padding: 8px 12px;
+  text-align: left; font-weight: 600;
+  border-bottom: 2px solid var(--border);
+}
+td { padding: 7px 12px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--accent-lt); }
+
+/* ─── SVG diagrams ─── */
+.diagram-wrap {
+  margin: 16px 0 24px; overflow-x: auto;
+}
+.diagram-wrap svg { display: block; max-width: 100%; height: auto; }
+.diagram-caption {
+  text-align: center; font-size: 0.72rem; color: var(--fg-muted);
+  margin-top: 6px; font-style: italic;
+}
+
+/* ─── Gantt rows ─── */
+.gantt-label { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+/* ─── Coffman list ─── */
+.coffman-list { list-style: none; margin: 12px 0 20px; }
+.coffman-list li {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 8px 0; border-bottom: 1px dashed var(--border);
+}
+.coffman-list li:last-child { border-bottom: none; }
+.coffman-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.7rem; font-weight: 700;
+  background: var(--rose-lt); color: var(--rose);
+  min-width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; flex-shrink: 0; margin-top: 1px;
+}
+.coffman-list strong { color: var(--fg); }
+
+/* ─── Prevention rows ─── */
+.strategy-row {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 10px 0; border-bottom: 1px solid var(--border);
+}
+.strategy-row:last-child { border-bottom: none; }
+.strategy-icon {
+  width: 28px; height: 28px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+}
+
+/* ─── Responsive ─── */
+@media (max-width: 720px) {
+  .sidebar { display: none; }
+  .shell { padding-inline: max(16px, env(safe-area-inset-left, 0px)); }
+}
+</style>
+
+<!-- TOP BAR -->
+<div class="topbar">
+  <div>
+    <div class="topbar-title">STM32 / FreeRTOS Training</div>
+    <div class="topbar-sub">Semaphores · Deadlocks · Priority Inversion</div>
+  </div>
+  <div class="breadcrumb">
+    CO3 &nbsp;›&nbsp; <span>Session 3</span>
+  </div>
+</div>
+
+<div class="shell">
+<!-- SIDEBAR TOC -->
+<nav class="sidebar" aria-label="Table of contents">
+  <div class="toc-group">
+    <div class="toc-group-label">1 · Semaphores</div>
+    <a class="toc-link" href="#sem-overview">Overview</a>
+    <a class="toc-link toc-sub" href="#sem-binary">Binary Semaphore</a>
+    <a class="toc-link toc-sub" href="#sem-mutex">Mutex</a>
+    <a class="toc-link toc-sub" href="#sem-recmutex">Recursive Mutex</a>
+    <a class="toc-link toc-sub" href="#sem-counting">Counting Semaphore</a>
+    <a class="toc-link toc-sub" href="#sem-api">FreeRTOS API</a>
+    <a class="toc-link toc-sub" href="#sem-table">Comparison Table</a>
+  </div>
+  <div class="toc-group">
+    <div class="toc-group-label">2 · Deadlocks</div>
+    <a class="toc-link" href="#dl-what">What is a Deadlock?</a>
+    <a class="toc-link toc-sub" href="#dl-coffman">Coffman Conditions</a>
+    <a class="toc-link toc-sub" href="#dl-example">Two-Mutex Example</a>
+    <a class="toc-link toc-sub" href="#dl-prevention">Prevention Strategies</a>
+    <a class="toc-link toc-sub" href="#dl-detection">Detection &amp; Recovery</a>
+  </div>
+  <div class="toc-group">
+    <div class="toc-group-label">3 · Starvation</div>
+    <a class="toc-link" href="#st-what">Starvation vs Deadlock</a>
+    <a class="toc-link toc-sub" href="#st-example">Concrete Example</a>
+  </div>
+  <div class="toc-group">
+    <div class="toc-group-label">4 · Priority Inversion</div>
+    <a class="toc-link" href="#pi-what">What is Inversion?</a>
+    <a class="toc-link toc-sub" href="#pi-gantt">Gantt Chart</a>
+    <a class="toc-link toc-sub" href="#pi-mars">Mars Pathfinder</a>
+    <a class="toc-link toc-sub" href="#pi-fix">Fix: Mutex Inheritance</a>
+    <a class="toc-link toc-sub" href="#pi-code">Demo Code</a>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main id="main-content">
+
+<!-- ═══════════════════════════════ SECTION 1: SEMAPHORES ══════════════════ -->
+<section id="sem-overview">
+  <div class="section-header">
+    <span class="section-num">01</span>
+    <h2 class="section-title">Semaphores</h2>
+  </div>
+
+  <p>A semaphore is a kernel object with an integer counter. Two atomic operations — <strong>Take</strong> (P / wait / decrement) and <strong>Give</strong> (V / signal / increment) — are the only way to read or change it. The scheduler blocks a task that calls Take on a zero-count semaphore and unblocks it when another context calls Give.</p>
+
+  <p>FreeRTOS provides four semaphore variants. Choosing the wrong one is one of the most common embedded synchronisation bugs.</p>
+
+  <!-- Overview diagram -->
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 720 170" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+      <!-- boxes -->
+      <rect x="10"  y="30" width="155" height="110" rx="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5"/>
+      <rect x="185" y="30" width="155" height="110" rx="8" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1.5"/>
+      <rect x="360" y="30" width="155" height="110" rx="8" fill="#FFF4E5" stroke="#B85C00" stroke-width="1.5"/>
+      <rect x="535" y="30" width="175" height="110" rx="8" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.5"/>
+      <!-- labels -->
+      <text x="87"  y="22" text-anchor="middle" font-size="11" font-weight="700" fill="#1A5FA8">BINARY</text>
+      <text x="262" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="#0A7B6C">MUTEX</text>
+      <text x="437" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="#B85C00">RECURSIVE MUTEX</text>
+      <text x="622" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="#C0273A">COUNTING</text>
+      <!-- binary -->
+      <text x="87" y="58"  text-anchor="middle" font-size="20" font-weight="700" fill="#1A5FA8">0 / 1</text>
+      <text x="87" y="80"  text-anchor="middle" font-size="10" fill="#4A4A4A">No ownership</text>
+      <text x="87" y="96"  text-anchor="middle" font-size="10" fill="#4A4A4A">ISR-safe ✓</text>
+      <text x="87" y="112" text-anchor="middle" font-size="10" fill="#4A4A4A">Signalling / sync</text>
+      <text x="87" y="130" text-anchor="middle" font-size="9"  fill="#6B6660">ISR → Task doorbell</text>
+      <!-- mutex -->
+      <text x="262" y="58"  text-anchor="middle" font-size="20" font-weight="700" fill="#0A7B6C">0 / 1</text>
+      <text x="262" y="80"  text-anchor="middle" font-size="10" fill="#4A4A4A">Owned by task</text>
+      <text x="262" y="96"  text-anchor="middle" font-size="10" fill="#4A4A4A">Priority inherit ✓</text>
+      <text x="262" y="112" text-anchor="middle" font-size="10" fill="#4A4A4A">Resource protection</text>
+      <text x="262" y="130" text-anchor="middle" font-size="9"  fill="#6B6660">UART print guard</text>
+      <!-- recursive -->
+      <text x="437" y="58"  text-anchor="middle" font-size="20" font-weight="700" fill="#B85C00">0..N</text>
+      <text x="437" y="80"  text-anchor="middle" font-size="10" fill="#4A4A4A">Re-entrant owner</text>
+      <text x="437" y="96"  text-anchor="middle" font-size="10" fill="#4A4A4A">Priority inherit ✓</text>
+      <text x="437" y="112" text-anchor="middle" font-size="10" fill="#4A4A4A">Nested locking</text>
+      <text x="437" y="130" text-anchor="middle" font-size="9"  fill="#6B6660">I²C nested calls</text>
+      <!-- counting -->
+      <text x="622" y="58"  text-anchor="middle" font-size="20" font-weight="700" fill="#C0273A">0..N</text>
+      <text x="622" y="80"  text-anchor="middle" font-size="10" fill="#4A4A4A">No ownership</text>
+      <text x="622" y="96"  text-anchor="middle" font-size="10" fill="#4A4A4A">ISR-safe ✓</text>
+      <text x="622" y="112" text-anchor="middle" font-size="10" fill="#4A4A4A">Pool / events</text>
+      <text x="622" y="130" text-anchor="middle" font-size="9"  fill="#6B6660">SPI CS pool</text>
+    </svg>
+    <div class="diagram-caption">Figure 1 — Four FreeRTOS semaphore variants at a glance</div>
+  </div>
+
+  <div class="sem-grid">
+
+    <!-- BINARY -->
+    <div class="sem-card binary" id="sem-binary">
+      <div class="sem-name">xSemaphoreCreateBinary()</div>
+      <p style="font-size:0.82rem;margin-top:6px;">Counter is either <strong>0</strong> (taken) or <strong>1</strong> (available). There is no concept of an owner — any task or ISR can Give it.</p>
+      <div class="sem-attr">
+        <span class="badge badge-yes">ISR-safe</span>
+        <span class="badge badge-no">No priority inherit</span>
+      </div>
+      <p style="font-size:0.8rem;margin-top:8px;"><strong>Primary use:</strong> signalling — an ISR fires and a task wakes to process the event.</p>
+      <!-- ISR→Task doorbell diagram -->
+      <div class="diagram-wrap" style="margin-top:10px;">
+        <svg viewBox="0 0 330 110" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+          <!-- ISR box -->
+          <rect x="8" y="8" width="90" height="36" rx="5" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.2"/>
+          <text x="53" y="22" text-anchor="middle" font-weight="600" fill="#1A5FA8" font-size="10">ADC ISR</text>
+          <text x="53" y="37" text-anchor="middle" fill="#4A4A4A">conversion done</text>
+          <!-- give arrow -->
+          <line x1="98" y1="26" x2="148" y2="26" stroke="#1A5FA8" stroke-width="1.5" marker-end="url(#arrowB)"/>
+          <text x="123" y="18" text-anchor="middle" fill="#1A5FA8" font-weight="600">Give</text>
+          <!-- semaphore -->
+          <rect x="148" y="10" width="70" height="32" rx="5" fill="#DBEAFE" stroke="#1A5FA8" stroke-width="1.2"/>
+          <text x="183" y="21" text-anchor="middle" font-weight="700" fill="#1A5FA8">SEM</text>
+          <text x="183" y="35" text-anchor="middle" fill="#1A5FA8">0 → 1</text>
+          <!-- take arrow -->
+          <line x1="218" y1="26" x2="265" y2="26" stroke="#0A7B6C" stroke-width="1.5" marker-end="url(#arrowG)"/>
+          <text x="242" y="18" text-anchor="middle" fill="#0A7B6C" font-weight="600">Take</text>
+          <!-- task box -->
+          <rect x="265" y="8" width="58" height="36" rx="5" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1.2"/>
+          <text x="294" y="22" text-anchor="middle" font-weight="600" fill="#0A7B6C">Task</text>
+          <text x="294" y="36" text-anchor="middle" fill="#4A4A4A">wakes up</text>
+          <!-- blocked state -->
+          <text x="294" y="65" text-anchor="middle" fill="#9A948C" font-size="9">Blocked on</text>
+          <text x="294" y="77" text-anchor="middle" fill="#9A948C" font-size="9">SEM count=0</text>
+          <line x1="294" y1="82" x2="294" y2="44" stroke="#9A948C" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arrowM)"/>
+          <!-- count diagram -->
+          <rect x="148" y="56" width="70" height="22" rx="4" fill="#F0EFE9" stroke="#DDD9CE"/>
+          <text x="183" y="71" text-anchor="middle" fill="#6B6660" font-size="9">count: 0 → 1 → 0</text>
+          <!-- arrows defs -->
+          <defs>
+            <marker id="arrowB" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#1A5FA8"/>
+            </marker>
+            <marker id="arrowG" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#0A7B6C"/>
+            </marker>
+            <marker id="arrowM" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#9A948C"/>
+            </marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Binary semaphore as ISR→Task doorbell</div>
+      </div>
+    </div>
+
+    <!-- MUTEX -->
+    <div class="sem-card mutex" id="sem-mutex">
+      <div class="sem-name">xSemaphoreCreateMutex()</div>
+      <p style="font-size:0.82rem;margin-top:6px;">Counter is 0 or 1, but the kernel tracks which task holds it. A task <strong>must</strong> Give back the mutex it Took — any other task Giving it is a bug.</p>
+      <div class="sem-attr">
+        <span class="badge badge-no">NOT ISR-safe</span>
+        <span class="badge badge-yes">Priority inherit</span>
+      </div>
+      <p style="font-size:0.8rem;margin-top:8px;"><strong>Primary use:</strong> mutual exclusion — protecting a shared peripheral (UART, SPI, I²C).</p>
+      <div class="diagram-wrap" style="margin-top:10px;">
+        <svg viewBox="0 0 330 100" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+          <rect x="6"  y="8" width="80" height="30" rx="4" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1.2"/>
+          <text x="46" y="20" text-anchor="middle" font-weight="600" fill="#0A7B6C">Task A</text>
+          <text x="46" y="33" text-anchor="middle" fill="#4A4A4A">printing...</text>
+          <rect x="6"  y="52" width="80" height="30" rx="4" fill="#F0EFE9" stroke="#DDD9CE" stroke-width="1.2"/>
+          <text x="46" y="64" text-anchor="middle" font-weight="600" fill="#6B6660">Task B</text>
+          <text x="46" y="77" text-anchor="middle" fill="#9A948C">Blocked</text>
+          <!-- mutex -->
+          <rect x="130" y="26" width="68" height="28" rx="5" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1.5"/>
+          <text x="164" y="37" text-anchor="middle" font-weight="700" fill="#0A7B6C" font-size="11">MUTEX</text>
+          <text x="164" y="50" text-anchor="middle" fill="#0A7B6C" font-size="9">owner=A</text>
+          <!-- Task A arrows -->
+          <line x1="86" y1="23" x2="130" y2="35" stroke="#0A7B6C" stroke-width="1.3" marker-end="url(#arrowG2)"/>
+          <text x="103" y="22" fill="#0A7B6C" font-size="8.5">Take ✓</text>
+          <!-- Task B blocked -->
+          <line x1="86" y1="62" x2="130" y2="50" stroke="#C0273A" stroke-width="1.3" stroke-dasharray="3,2" marker-end="url(#arrowR)"/>
+          <text x="102" y="62" fill="#C0273A" font-size="8.5">Take ✗</text>
+          <!-- UART -->
+          <rect x="240" y="24" width="80" height="30" rx="4" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.2"/>
+          <text x="280" y="36" text-anchor="middle" font-weight="600" fill="#1A5FA8">UART1</text>
+          <text x="280" y="49" text-anchor="middle" fill="#4A4A4A">shared HW</text>
+          <line x1="198" y1="38" x2="240" y2="38" stroke="#1A5FA8" stroke-width="1.3" marker-end="url(#arrowBL)"/>
+          <defs>
+            <marker id="arrowG2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#0A7B6C"/>
+            </marker>
+            <marker id="arrowR" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#C0273A"/>
+            </marker>
+            <marker id="arrowBL" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#1A5FA8"/>
+            </marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Mutex protecting shared UART; Task B blocked until A Gives</div>
+      </div>
+    </div>
+
+    <!-- RECURSIVE MUTEX -->
+    <div class="sem-card recmut" id="sem-recmutex">
+      <div class="sem-name">xSemaphoreCreateRecursiveMutex()</div>
+      <p style="font-size:0.82rem;margin-top:6px;">The holding task can Take the same mutex multiple times without deadlocking. A nesting counter tracks depth; the mutex is only released when Give is called once for each Take.</p>
+      <div class="sem-attr">
+        <span class="badge badge-no">NOT ISR-safe</span>
+        <span class="badge badge-yes">Priority inherit</span>
+      </div>
+      <p style="font-size:0.8rem;margin-top:8px;"><strong>Use case:</strong> a function that locks an I²C bus and calls a helper that also tries to lock the same bus.</p>
+      <div class="diagram-wrap" style="margin-top:10px;">
+        <svg viewBox="0 0 330 115" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+          <!-- stack of calls -->
+          <rect x="8"  y="6"  width="130" height="22" rx="3" fill="#FFF4E5" stroke="#B85C00" stroke-width="1.2"/>
+          <text x="73" y="20" text-anchor="middle" font-weight="600" fill="#B85C00">i2c_write_reg()</text>
+          <rect x="18" y="33" width="120" height="22" rx="3" fill="#FFF4E5" stroke="#B85C00" stroke-width="1.2"/>
+          <text x="78" y="47" text-anchor="middle" font-weight="600" fill="#B85C00">i2c_raw_write()</text>
+          <rect x="28" y="60" width="110" height="22" rx="3" fill="#FFF4E5" stroke="#B85C00" stroke-width="1.2"/>
+          <text x="83" y="74" text-anchor="middle" fill="#4A4A4A">Take(recmutex)  depth=2</text>
+          <!-- counter box -->
+          <rect x="200" y="30" width="110" height="55" rx="5" fill="#FDF6E3" stroke="#B85C00" stroke-width="1.5"/>
+          <text x="255" y="48" text-anchor="middle" font-weight="700" fill="#B85C00" font-size="11">REC MUTEX</text>
+          <text x="255" y="64" text-anchor="middle" fill="#4A4A4A">depth counter: 2</text>
+          <text x="255" y="78" text-anchor="middle" fill="#9A948C" font-size="9">owner = Task A</text>
+          <!-- arrow -->
+          <line x1="138" y1="71" x2="200" y2="60" stroke="#B85C00" stroke-width="1.3" marker-end="url(#arrowAmb)"/>
+          <text x="255" y="100" text-anchor="middle" fill="#B85C00" font-size="9">Give×2 → released</text>
+          <defs>
+            <marker id="arrowAmb" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#B85C00"/>
+            </marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Recursive mutex — nesting depth=2, released only after two Give calls</div>
+      </div>
+    </div>
+
+    <!-- COUNTING -->
+    <div class="sem-card counting" id="sem-counting">
+      <div class="sem-name">xSemaphoreCreateCounting(max, init)</div>
+      <p style="font-size:0.82rem;margin-top:6px;">Counter ranges from 0 to a configured maximum. No ownership. ISR-safe with <code>FromISR</code> variants. Tasks taking the semaphore consume a slot; tasks giving it return one.</p>
+      <div class="sem-attr">
+        <span class="badge badge-yes">ISR-safe</span>
+        <span class="badge badge-no">No priority inherit</span>
+      </div>
+      <p style="font-size:0.8rem;margin-top:8px;"><strong>Two modes:</strong> resource pool (init=max, e.g. 3 SPI CS lines) or event accumulator (init=0, counting pending IRQs).</p>
+      <div class="diagram-wrap" style="margin-top:10px;">
+        <svg viewBox="0 0 330 110" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+          <!-- pool mode -->
+          <text x="90" y="14" text-anchor="middle" font-weight="700" fill="#C0273A">SPI CS Pool  (max=3, init=3)</text>
+          <!-- slots -->
+          <rect x="14" y="22" width="50" height="26" rx="3" fill="#FFF0F2" stroke="#C0273A"/>
+          <text x="39" y="38" text-anchor="middle" fill="#C0273A" font-weight="600">CS0</text>
+          <rect x="70" y="22" width="50" height="26" rx="3" fill="#FFF0F2" stroke="#C0273A"/>
+          <text x="95" y="38" text-anchor="middle" fill="#C0273A" font-weight="600">CS1</text>
+          <rect x="126" y="22" width="50" height="26" rx="3" fill="#FFF0F2" stroke="#C0273A"/>
+          <text x="151" y="38" text-anchor="middle" fill="#C0273A" font-weight="600">CS2</text>
+          <!-- count -->
+          <rect x="195" y="22" width="120" height="26" rx="4" fill="#FDF0F1" stroke="#C0273A" stroke-width="1.5"/>
+          <text x="255" y="36" text-anchor="middle" font-weight="700" fill="#C0273A" font-size="11">count = 3 → 2 → 1</text>
+          <line x1="176" y1="35" x2="195" y2="35" stroke="#C0273A" marker-end="url(#arrowRos)"/>
+          <!-- event mode -->
+          <text x="90" y="72" text-anchor="middle" font-weight="700" fill="#C0273A">ADC Event Accumulator (init=0)</text>
+          <rect x="14" y="80" width="55" height="24" rx="3" fill="#EBF3FF" stroke="#1A5FA8"/>
+          <text x="41" y="95" text-anchor="middle" fill="#1A5FA8">ADC IRQ ×3</text>
+          <line x1="70" y1="92" x2="128" y2="92" stroke="#C0273A" marker-end="url(#arrowRos)"/>
+          <text x="100" y="86" text-anchor="middle" fill="#C0273A">Give ×3</text>
+          <rect x="128" y="80" width="80" height="24" rx="4" fill="#FDF0F1" stroke="#C0273A"/>
+          <text x="168" y="95" text-anchor="middle" font-weight="700" fill="#C0273A">count = 3</text>
+          <line x1="208" y1="92" x2="250" y2="92" stroke="#0A7B6C" marker-end="url(#arrowG3)"/>
+          <text x="230" y="86" text-anchor="middle" fill="#0A7B6C">Take</text>
+          <rect x="250" y="80" width="68" height="24" rx="3" fill="#E3F5F2" stroke="#0A7B6C"/>
+          <text x="284" y="95" text-anchor="middle" fill="#0A7B6C">Process task</text>
+          <defs>
+            <marker id="arrowRos" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#C0273A"/>
+            </marker>
+            <marker id="arrowG3" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+              <polygon points="0 0,7 3.5,0 7" fill="#0A7B6C"/>
+            </marker>
+          </defs>
+        </svg>
+        <div class="diagram-caption">Counting semaphore — pool and event-accumulator modes</div>
+      </div>
+    </div>
+  </div><!-- sem-grid -->
+
+  <!-- FreeRTOS API -->
+  <h3 id="sem-api">FreeRTOS Semaphore API</h3>
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Function</th><th>Direction</th><th>ISR variant</th><th>Notes</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>xSemaphoreCreateBinary()</code></td><td>Create</td><td>—</td><td>Starts at count 0 — Give before Take</td></tr>
+          <tr><td><code>xSemaphoreCreateMutex()</code></td><td>Create</td><td>—</td><td>Starts available; has priority inheritance</td></tr>
+          <tr><td><code>xSemaphoreCreateRecursiveMutex()</code></td><td>Create</td><td>—</td><td>Must pair with Recursive Give/Take API</td></tr>
+          <tr><td><code>xSemaphoreCreateCounting(max, init)</code></td><td>Create</td><td>—</td><td>Pool: init=max; Events: init=0</td></tr>
+          <tr><td><code>xSemaphoreTake(sem, ticks)</code></td><td>Consume</td><td><code>xSemaphoreTakeFromISR()</code></td><td>Returns pdTRUE on success</td></tr>
+          <tr><td><code>xSemaphoreGive(sem)</code></td><td>Produce</td><td><code>xSemaphoreGiveFromISR()</code></td><td>Must call portYIELD_FROM_ISR in ISR</td></tr>
+          <tr><td><code>xSemaphoreTakeRecursive()</code></td><td>Consume</td><td>—</td><td>Recursive mutex only</td></tr>
+          <tr><td><code>xSemaphoreGiveRecursive()</code></td><td>Produce</td><td>—</td><td>Recursive mutex only</td></tr>
+          <tr><td><code>vSemaphoreDelete(sem)</code></td><td>Destroy</td><td>—</td><td>Never delete with waiting tasks</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Comparison table -->
+  <h3 id="sem-table">Side-by-Side Comparison</h3>
+  <div class="card">
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Property</th>
+            <th style="color:var(--blue)">Binary</th>
+            <th style="color:var(--accent)">Mutex</th>
+            <th style="color:var(--amber)">Recursive Mutex</th>
+            <th style="color:var(--rose)">Counting</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>Count range</td><td>0–1</td><td>0–1</td><td>0–N</td><td>0–N</td></tr>
+          <tr><td>Ownership</td><td>None</td><td>Single task</td><td>Single task (nested)</td><td>None</td></tr>
+          <tr><td>ISR safe</td><td>✅</td><td>❌</td><td>❌</td><td>✅</td></tr>
+          <tr><td>Priority inheritance</td><td>❌</td><td>✅</td><td>✅</td><td>❌</td></tr>
+          <tr><td>Primary purpose</td><td>Signalling</td><td>Mutual exclusion</td><td>Re-entrant exclusion</td><td>Pool / accumulate</td></tr>
+          <tr><td>Deadlock risk</td><td>Low</td><td>Yes (unmatched Take)</td><td>Lower (same task re-enters)</td><td>Low</td></tr>
+          <tr><td>FreeRTOS API</td><td><code>CreateBinary</code></td><td><code>CreateMutex</code></td><td><code>CreateRecursiveMutex</code></td><td><code>CreateCounting</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="card warn-card">
+    <div class="card-label">⚠ Golden Rule</div>
+    <p style="margin:0;font-size:0.85rem;">Always do your <strong>work outside the lock</strong>. Copy shared data into a local variable inside the critical section, then release the mutex before processing. Never block, delay, or call slow I/O while holding a mutex.</p>
+    <pre><code>xSemaphoreTake(mutex, portMAX_DELAY);
+local_copy = shared_data;         /* copy only — fast */
+xSemaphoreGive(mutex);
+process(local_copy);              /* work outside — slow is fine */</code></pre>
+  </div>
+
+</section>
+
+<!-- ═══════════════════════════════ SECTION 2: DEADLOCKS ══════════════════ -->
+<section>
+  <div class="section-header" id="dl-what">
+    <span class="section-num">02</span>
+    <h2 class="section-title">Deadlocks</h2>
+  </div>
+
+  <p>A deadlock is a situation where two or more tasks are each waiting for a resource held by another, so none can ever proceed. The system is stuck permanently — no timeout, no progress.</p>
+
+  <!-- Coffman conditions -->
+  <h3 id="dl-coffman">The Four Coffman Conditions</h3>
+  <p>All four must hold simultaneously for a deadlock to exist. Preventing any one of them prevents the deadlock.</p>
+
+  <!-- Circular wait diagram -->
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 500 230" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+      <defs>
+        <marker id="arrowDL" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <polygon points="0 0,8 4,0 8" fill="#C0273A"/>
+        </marker>
+        <marker id="arrowDLB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <polygon points="0 0,8 4,0 8" fill="#1A5FA8"/>
+        </marker>
+      </defs>
+      <!-- tasks -->
+      <rect x="30" y="80" width="110" height="44" rx="8" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="2"/>
+      <text x="85" y="98" text-anchor="middle" font-size="12" font-weight="700" fill="#0A7B6C">Task A</text>
+      <text x="85" y="115" text-anchor="middle" font-size="10" fill="#4A4A4A">holds FLASH</text>
+      <text x="85" y="127" text-anchor="middle" font-size="10" fill="#4A4A4A">wants UART</text>
+
+      <rect x="360" y="80" width="110" height="44" rx="8" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="2"/>
+      <text x="415" y="98" text-anchor="middle" font-size="12" font-weight="700" fill="#0A7B6C">Task B</text>
+      <text x="415" y="115" text-anchor="middle" font-size="10" fill="#4A4A4A">holds UART</text>
+      <text x="415" y="127" text-anchor="middle" font-size="10" fill="#4A4A4A">wants FLASH</text>
+
+      <!-- resources -->
+      <rect x="175" y="20" width="90" height="36" rx="6" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5"/>
+      <text x="220" y="34" text-anchor="middle" font-size="11" font-weight="700" fill="#1A5FA8">FLASH</text>
+      <text x="220" y="49" text-anchor="middle" font-size="9" fill="#6B6660">mutex</text>
+
+      <rect x="175" y="160" width="90" height="36" rx="6" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5"/>
+      <text x="220" y="174" text-anchor="middle" font-size="11" font-weight="700" fill="#1A5FA8">UART</text>
+      <text x="220" y="189" text-anchor="middle" font-size="9" fill="#6B6660">mutex</text>
+
+      <!-- A holds FLASH -->
+      <line x1="140" y1="90" x2="175" y2="45" stroke="#0A7B6C" stroke-width="1.5"/>
+      <text x="145" y="64" font-size="9" fill="#0A7B6C" font-weight="600">holds</text>
+      <!-- A wants UART -->
+      <line x1="140" y1="112" x2="175" y2="170" stroke="#C0273A" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowDL)"/>
+      <text x="140" y="150" font-size="9" fill="#C0273A" font-weight="600">wants</text>
+      <!-- B holds UART -->
+      <line x1="360" y1="112" x2="265" y2="170" stroke="#0A7B6C" stroke-width="1.5"/>
+      <text x="330" y="150" font-size="9" fill="#0A7B6C" font-weight="600">holds</text>
+      <!-- B wants FLASH -->
+      <line x1="360" y1="90" x2="265" y2="45" stroke="#C0273A" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrowDL)"/>
+      <text x="308" y="60" font-size="9" fill="#C0273A" font-weight="600">wants</text>
+
+      <!-- DEADLOCK label -->
+      <text x="250" y="105" text-anchor="middle" font-size="13" font-weight="800" fill="#C0273A">DEADLOCK</text>
+      <text x="250" y="122" text-anchor="middle" font-size="10" fill="#6B6660">circular wait</text>
+
+      <!-- legend -->
+      <line x1="30" y1="210" x2="60" y2="210" stroke="#0A7B6C" stroke-width="1.5"/>
+      <text x="65" y="214" font-size="9" fill="#4A4A4A">holds (assigned)</text>
+      <line x1="170" y1="210" x2="200" y2="210" stroke="#C0273A" stroke-width="1.5" stroke-dasharray="5,3"/>
+      <polygon points="200,207 207,210 200,213" fill="#C0273A"/>
+      <text x="210" y="214" font-size="9" fill="#4A4A4A">waiting for</text>
+    </svg>
+    <div class="diagram-caption">Figure 2 — Circular wait: Task A ↔ Task B holding and waiting for each other's resource</div>
+  </div>
+
+  <ul class="coffman-list">
+    <li>
+      <div class="coffman-num">1</div>
+      <div><strong>Mutual Exclusion</strong> — the resource can only be held by one task at a time (a mutex, by definition). Cannot be eliminated for truly exclusive hardware.</div>
+    </li>
+    <li>
+      <div class="coffman-num">2</div>
+      <div><strong>Hold and Wait</strong> — a task holds at least one resource while waiting to acquire another. Task A holds FLASH mutex and waits for UART mutex.</div>
+    </li>
+    <li>
+      <div class="coffman-num">3</div>
+      <div><strong>No Preemption</strong> — resources cannot be forcibly taken away; a task must release them voluntarily. The kernel never revokes a mutex from its owner.</div>
+    </li>
+    <li>
+      <div class="coffman-num">4</div>
+      <div><strong>Circular Wait</strong> — a chain of tasks exists where each is waiting for a resource held by the next: A waits for B's resource, B waits for A's resource.</div>
+    </li>
+  </ul>
+
+  <!-- Two-mutex example -->
+  <h3 id="dl-example">Two-Mutex Deadlock: Step by Step</h3>
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="11">
+      <defs>
+        <marker id="dlarr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <polygon points="0 0,7 3.5,0 7" fill="#4A4A4A"/>
+        </marker>
+      </defs>
+      <!-- time axis -->
+      <line x1="60" y1="240" x2="660" y2="240" stroke="#DDD9CE" stroke-width="1.5"/>
+      <text x="350" y="257" text-anchor="middle" font-size="10" fill="#9A948C">time →</text>
+      <!-- t labels -->
+      <text x="100" y="253" text-anchor="middle" font-size="9" fill="#9A948C">t0</text>
+      <text x="200" y="253" text-anchor="middle" font-size="9" fill="#9A948C">t1</text>
+      <text x="320" y="253" text-anchor="middle" font-size="9" fill="#9A948C">t2</text>
+      <text x="440" y="253" text-anchor="middle" font-size="9" fill="#9A948C">t3</text>
+      <text x="580" y="253" text-anchor="middle" font-size="9" fill="#C0273A" font-weight="700">DEADLOCK</text>
+      <!-- task row labels -->
+      <text x="55" y="50"  text-anchor="end" font-weight="700" fill="#0A7B6C">Task A</text>
+      <text x="55" y="130" text-anchor="end" font-weight="700" fill="#1A5FA8">Task B</text>
+      <!-- Task A timeline -->
+      <rect x="80"  y="36" width="120" height="20" rx="3" fill="#E3F5F2" stroke="#0A7B6C"/>
+      <text x="140" y="50" text-anchor="middle" fill="#0A7B6C" font-size="9.5">Take(FLASH_mutex) ✓</text>
+      <rect x="200" y="36" width="120" height="20" rx="3" fill="#E3F5F2" stroke="#0A7B6C"/>
+      <text x="260" y="50" text-anchor="middle" fill="#0A7B6C" font-size="9.5">... work ...</text>
+      <rect x="320" y="36" width="180" height="20" rx="3" fill="#FFF0F2" stroke="#C0273A" stroke-dasharray="4,2"/>
+      <text x="410" y="50" text-anchor="middle" fill="#C0273A" font-size="9.5">Take(UART_mutex) — BLOCKED</text>
+      <!-- Task B timeline -->
+      <rect x="80"  y="116" width="120" height="20" rx="3" fill="#EBF3FF" stroke="#1A5FA8"/>
+      <text x="140" y="130" text-anchor="middle" fill="#1A5FA8" font-size="9.5">Take(UART_mutex) ✓</text>
+      <rect x="200" y="116" width="120" height="20" rx="3" fill="#EBF3FF" stroke="#1A5FA8"/>
+      <text x="260" y="130" text-anchor="middle" fill="#1A5FA8" font-size="9.5">... work ...</text>
+      <rect x="320" y="116" width="180" height="20" rx="3" fill="#FFF0F2" stroke="#C0273A" stroke-dasharray="4,2"/>
+      <text x="410" y="130" text-anchor="middle" fill="#C0273A" font-size="9.5">Take(FLASH_mutex) — BLOCKED</text>
+      <!-- vertical lines -->
+      <line x1="100" y1="56" x2="100" y2="240" stroke="#DDD9CE" stroke-dasharray="3,3"/>
+      <line x1="200" y1="56" x2="200" y2="240" stroke="#DDD9CE" stroke-dasharray="3,3"/>
+      <line x1="320" y1="56" x2="320" y2="240" stroke="#DDD9CE" stroke-dasharray="3,3"/>
+      <line x1="500" y1="20" x2="500" y2="240" stroke="#C0273A" stroke-dasharray="4,2" stroke-width="1.5"/>
+      <!-- coffman annotation boxes -->
+      <rect x="70" y="75" width="130" height="32" rx="4" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="135" y="87" text-anchor="middle" font-size="8.5" fill="#6B6660">① Mutual Exclusion</text>
+      <text x="135" y="100" text-anchor="middle" font-size="8.5" fill="#6B6660">② Hold &amp; Wait</text>
+      <rect x="330" y="75" width="145" height="32" rx="4" fill="#FFF0F2" stroke="#C0273A"/>
+      <text x="403" y="87" text-anchor="middle" font-size="8.5" fill="#C0273A">③ No Preemption</text>
+      <text x="403" y="100" text-anchor="middle" font-size="8.5" fill="#C0273A">④ Circular Wait</text>
+      <!-- big BLOCKED markers -->
+      <rect x="500" y="36" width="155" height="20" rx="3" fill="#FFF0F2" stroke="#C0273A"/>
+      <text x="577" y="50" text-anchor="middle" fill="#C0273A" font-size="9">∞ waiting</text>
+      <rect x="500" y="116" width="155" height="20" rx="3" fill="#FFF0F2" stroke="#C0273A"/>
+      <text x="577" y="130" text-anchor="middle" fill="#C0273A" font-size="9">∞ waiting</text>
+      <!-- double-headed arrow showing circular -->
+      <path d="M500 56 Q500 92 500 136" stroke="#C0273A" stroke-width="2" fill="none" stroke-dasharray="4,2"/>
+    </svg>
+    <div class="diagram-caption">Figure 3 — Two-task, two-mutex deadlock timeline</div>
+  </div>
+
+  <pre><code>/* Task A: takes FLASH first, then UART */
+void TaskA(void *p) {
+    for (;;) {
+        xSemaphoreTake(flashMutex, portMAX_DELAY);  /* ← holds FLASH */
+        vTaskDelay(pdMS_TO_TICKS(10));
+        xSemaphoreTake(uartMutex, portMAX_DELAY);   /* ← BLOCKS if B holds UART */
+        /* ... work ... */
+        xSemaphoreGive(uartMutex);
+        xSemaphoreGive(flashMutex);
+    }
+}
+
+/* Task B: takes UART first, then FLASH  ← OPPOSITE ORDER → deadlock! */
+void TaskB(void *p) {
+    for (;;) {
+        xSemaphoreTake(uartMutex, portMAX_DELAY);   /* ← holds UART */
+        vTaskDelay(pdMS_TO_TICKS(10));
+        xSemaphoreTake(flashMutex, portMAX_DELAY);  /* ← BLOCKS if A holds FLASH */
+        /* ... work ... */
+        xSemaphoreGive(flashMutex);
+        xSemaphoreGive(uartMutex);
+    }
+}</code></pre>
+
+  <!-- Prevention -->
+  <h3 id="dl-prevention">Prevention Strategies</h3>
+
+  <div class="card">
+    <div class="strategy-row">
+      <div class="strategy-icon" style="background:var(--accent-lt);">🔢</div>
+      <div>
+        <strong>Lock Ordering</strong> (most practical) — assign a global numeric order to all mutexes and always acquire them in the same order. Breaks the circular-wait condition. Both tasks Take FLASH before UART.
+        <pre style="margin-top:8px;"><code>#define ORDER_FLASH 1
+#define ORDER_UART  2
+/* Always Take lower-numbered first */
+xSemaphoreTake(flashMutex, portMAX_DELAY);
+xSemaphoreTake(uartMutex,  portMAX_DELAY);</code></pre>
+      </div>
+    </div>
+    <div class="strategy-row">
+      <div class="strategy-icon" style="background:var(--amber-lt);">⏱</div>
+      <div>
+        <strong>Try-with-Timeout</strong> — use a finite timeout instead of <code>portMAX_DELAY</code>. If Take fails, release everything already held and retry later. Breaks hold-and-wait.
+        <pre style="margin-top:8px;"><code>if (xSemaphoreTake(uartMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+    xSemaphoreGive(flashMutex);   /* release what we hold */
+    vTaskDelay(pdMS_TO_TICKS(10));
+    continue;                      /* retry outer loop */
+}</code></pre>
+      </div>
+    </div>
+    <div class="strategy-row">
+      <div class="strategy-icon" style="background:var(--blue-lt);">⚛</div>
+      <div>
+        <strong>Atomic Acquisition</strong> — take all needed resources in one OS call or commit to none (Banker's algorithm). Heavy in practice, rarely used in embedded.
+      </div>
+    </div>
+  </div>
+
+  <!-- Detection & Recovery -->
+  <h3 id="dl-detection">Detection &amp; Recovery</h3>
+  <div class="card-grid">
+    <div class="card warn-card">
+      <div class="card-label">Detection</div>
+      <p style="font-size:0.82rem;margin:0;">A watchdog timer fed by each task is the simplest deadlock detector in embedded systems. If any task starves its watchdog feed, the system resets.</p>
+      <pre style="margin-top:8px;font-size:0.75rem;"><code>void TaskA(void *p) {
+    for (;;) {
+        /* ... work ... */
+        HAL_IWDG_Refresh(&amp;hiwdg); /* feed */
+    }
+}</code></pre>
+    </div>
+    <div class="card danger-card">
+      <div class="card-label">Recovery</div>
+      <ul style="font-size:0.82rem;padding-left:18px;margin:0;">
+        <li><strong>Terminate and clean up</strong> — kill one task, manually Give its mutexes, then re-create it</li>
+        <li><strong>Timeout + rollback</strong> — tasks periodically time out and reset their state</li>
+        <li><strong>System reset</strong> — safest in hard real-time: watchdog triggers a full reboot</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════ SECTION 3: STARVATION ══════════════════ -->
+<section>
+  <div class="section-header" id="st-what">
+    <span class="section-num">03</span>
+    <h2 class="section-title">Starvation</h2>
+  </div>
+
+  <p>Starvation is when a lower-priority task can <em>theoretically</em> run but <em>practically never does</em> because higher-priority tasks perpetually consume the resource it needs. Unlike a deadlock — where nothing moves — a starved system continues executing, but the low-priority task makes no progress.</p>
+
+  <!-- Comparison diagram -->
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 560 150" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+      <!-- DEADLOCK box -->
+      <rect x="20" y="20" width="240" height="110" rx="8" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.5"/>
+      <text x="140" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#C0273A">DEADLOCK</text>
+      <text x="140" y="62"  text-anchor="middle" font-size="10" fill="#4A4A4A">Two or more tasks blocked</text>
+      <text x="140" y="78"  text-anchor="middle" font-size="10" fill="#4A4A4A">waiting on EACH OTHER</text>
+      <text x="140" y="98"  text-anchor="middle" font-size="10" fill="#6B6660">→ System is stuck</text>
+      <text x="140" y="114" text-anchor="middle" font-size="10" fill="#6B6660">→ Nothing progresses</text>
+      <!-- STARVATION box -->
+      <rect x="300" y="20" width="240" height="110" rx="8" fill="#FFF4E5" stroke="#B85C00" stroke-width="1.5"/>
+      <text x="420" y="42" text-anchor="middle" font-size="13" font-weight="700" fill="#B85C00">STARVATION</text>
+      <text x="420" y="62"  text-anchor="middle" font-size="10" fill="#4A4A4A">Low-prio task could run</text>
+      <text x="420" y="78"  text-anchor="middle" font-size="10" fill="#4A4A4A">but high-prio always wins</text>
+      <text x="420" y="98"  text-anchor="middle" font-size="10" fill="#6B6660">→ System keeps running</text>
+      <text x="420" y="114" text-anchor="middle" font-size="10" fill="#6B6660">→ Low-prio never progresses</text>
+      <!-- vs -->
+      <text x="280" y="83" text-anchor="middle" font-size="14" font-weight="800" fill="#6B6660">vs</text>
+    </svg>
+    <div class="diagram-caption">Figure 4 — Deadlock vs Starvation</div>
+  </div>
+
+  <h3 id="st-example">Starvation Example: Mutex Monopoly</h3>
+  <p>Task HIGH holds a shared mutex for 490 ms out of every 500 ms. Task LOW only gets a 10 ms window per cycle. In practice, the scheduler never catches LOW in that narrow gap.</p>
+
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 720 180" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+      <defs>
+        <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1="0" y1="0" x2="0" y2="6" stroke="#C0273A" stroke-width="1" opacity="0.4"/>
+        </pattern>
+      </defs>
+      <!-- axis -->
+      <line x1="60" y1="160" x2="700" y2="160" stroke="#DDD9CE" stroke-width="1.5"/>
+      <text x="380" y="177" text-anchor="middle" font-size="10" fill="#9A948C">time (ms) →</text>
+      <!-- time ticks -->
+      <text x="60"  y="173" text-anchor="middle" font-size="9" fill="#9A948C">0</text>
+      <text x="180" y="173" text-anchor="middle" font-size="9" fill="#9A948C">500</text>
+      <text x="300" y="173" text-anchor="middle" font-size="9" fill="#9A948C">1000</text>
+      <text x="420" y="173" text-anchor="middle" font-size="9" fill="#9A948C">1500</text>
+      <text x="540" y="173" text-anchor="middle" font-size="9" fill="#9A948C">2000</text>
+      <text x="660" y="173" text-anchor="middle" font-size="9" fill="#9A948C">2500</text>
+      <!-- row labels -->
+      <text x="55" y="42"  text-anchor="end" font-weight="700" fill="#C0273A">HIGH</text>
+      <text x="55" y="102" text-anchor="end" font-weight="700" fill="#9A948C">LOW</text>
+      <!-- HIGH task bars (490ms run / 10ms gap) -->
+      <!-- cycle 1: 0-490 -->
+      <rect x="60"  y="28" width="235" height="22" rx="3" fill="#C0273A"/>
+      <text x="177" y="43" text-anchor="middle" font-size="9" fill="white">holds mutex (490 ms)</text>
+      <!-- cycle 1 gap: 490-500 (10ms = ~5px) -->
+      <rect x="295" y="28" width="5" height="22" rx="2" fill="#E8566A" opacity="0.4"/>
+      <!-- cycle 2: 500-990 -->
+      <rect x="300" y="28" width="235" height="22" rx="3" fill="#C0273A"/>
+      <text x="417" y="43" text-anchor="middle" font-size="9" fill="white">holds mutex (490 ms)</text>
+      <rect x="535" y="28" width="5" height="22" rx="2" fill="#E8566A" opacity="0.4"/>
+      <!-- cycle 3: 1000-1490 -->
+      <rect x="540" y="28" width="155" height="22" rx="3" fill="#C0273A"/>
+
+      <!-- LOW task — thin slivers it almost never gets -->
+      <rect x="295" y="88" width="5" height="22" rx="2" fill="url(#hatch)" stroke="#B85C00" stroke-width="1"/>
+      <rect x="535" y="88" width="5" height="22" rx="2" fill="url(#hatch)" stroke="#B85C00" stroke-width="1"/>
+      <!-- LOW mostly waiting -->
+      <rect x="60"  y="88" width="235" height="22" rx="3" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="177" y="103" text-anchor="middle" font-size="9" fill="#9A948C">waiting for mutex...</text>
+      <rect x="300" y="88" width="235" height="22" rx="3" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="417" y="103" text-anchor="middle" font-size="9" fill="#9A948C">waiting for mutex...</text>
+      <rect x="540" y="88" width="155" height="22" rx="3" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <!-- annotation -->
+      <line x1="295" y1="50" x2="295" y2="160" stroke="#B85C00" stroke-dasharray="3,2" stroke-width="1"/>
+      <text x="300" y="72" font-size="8.5" fill="#B85C00">10 ms</text>
+      <text x="300" y="82" font-size="8.5" fill="#B85C00">gap</text>
+    </svg>
+    <div class="diagram-caption">Figure 5 — HIGH task monopolises mutex; LOW task starves (never wins the 10 ms window)</div>
+  </div>
+
+  <div class="card ok-card">
+    <div class="card-label">Fix: Shorter Critical Sections</div>
+    <p style="font-size:0.83rem;margin:0;">Hold mutexes for the minimum possible time. Copy data, release, then process. For persistent starvation in FreeRTOS, time-slice with <code>configUSE_TIME_SLICING = 1</code> among equal-priority tasks, or limit high-priority task run time to open slots for lower-priority work.</p>
+  </div>
+
+</section>
+
+<!-- ═══════════════════════════════ SECTION 4: PRIORITY INVERSION ══════════ -->
+<section>
+  <div class="section-header" id="pi-what">
+    <span class="section-num">04</span>
+    <h2 class="section-title">Priority Inversion</h2>
+  </div>
+
+  <p>Priority inversion occurs when a <strong>high-priority task is indirectly blocked by a medium-priority task</strong>, even though it should always preempt medium-priority work. This violates the fundamental guarantee of a priority-preemptive scheduler.</p>
+
+  <!-- 3-task overview diagram -->
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 600 170" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+      <!-- three task boxes -->
+      <rect x="20"  y="30" width="130" height="50" rx="7" fill="#FFF0F2" stroke="#C0273A" stroke-width="2"/>
+      <text x="85"  y="52" text-anchor="middle" font-size="12" font-weight="700" fill="#C0273A">Task 1 — HIGH</text>
+      <text x="85"  y="68" text-anchor="middle" font-size="10" fill="#4A4A4A">PA0 blink (prio 3)</text>
+      <text x="85"  y="82" text-anchor="middle" font-size="9"  fill="#6B6660">wants semaphore</text>
+
+      <rect x="235" y="30" width="130" height="50" rx="7" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="2"/>
+      <text x="300" y="52" text-anchor="middle" font-size="12" font-weight="700" fill="#1A5FA8">Task 3 — MED</text>
+      <text x="300" y="68" text-anchor="middle" font-size="10" fill="#4A4A4A">PC13 busy-loop (prio 2)</text>
+      <text x="300" y="82" text-anchor="middle" font-size="9"  fill="#6B6660">preempts LOW</text>
+
+      <rect x="450" y="30" width="130" height="50" rx="7" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="2"/>
+      <text x="515" y="52" text-anchor="middle" font-size="12" font-weight="700" fill="#0A7B6C">Task 2 — LOW</text>
+      <text x="515" y="68" text-anchor="middle" font-size="10" fill="#4A4A4A">PA1 blink (prio 1)</text>
+      <text x="515" y="82" text-anchor="middle" font-size="9"  fill="#6B6660">holds semaphore</text>
+
+      <!-- arrows showing the problem -->
+      <line x1="150" y1="55" x2="235" y2="55" stroke="#C0273A" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#piArr)"/>
+      <text x="192" y="48" text-anchor="middle" font-size="9" fill="#C0273A">blocked by</text>
+      <line x1="365" y1="55" x2="450" y2="55" stroke="#1A5FA8" stroke-width="1.5" marker-end="url(#piArrB)"/>
+      <text x="407" y="48" text-anchor="middle" font-size="9" fill="#1A5FA8">preempts</text>
+      <!-- result -->
+      <text x="300" y="120" text-anchor="middle" font-size="11" font-weight="700" fill="#C0273A">Result: HIGH blocked while MED runs!</text>
+      <text x="300" y="138" text-anchor="middle" font-size="10" fill="#6B6660">Effective priority of HIGH = priority of LOW (inversion)</text>
+      <text x="300" y="155" text-anchor="middle" font-size="9" fill="#6B6660">Binary semaphore used → NO automatic priority inheritance</text>
+      <defs>
+        <marker id="piArr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <polygon points="0 0,7 3.5,0 7" fill="#C0273A"/>
+        </marker>
+        <marker id="piArrB" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <polygon points="0 0,7 3.5,0 7" fill="#1A5FA8"/>
+        </marker>
+      </defs>
+    </svg>
+    <div class="diagram-caption">Figure 6 — Three-task priority inversion setup</div>
+  </div>
+
+  <!-- Gantt Chart -->
+  <h3 id="pi-gantt">Gantt Chart — 3000 ms Timeline</h3>
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 740 230" xmlns="http://www.w3.org/2000/svg" font-family="'JetBrains Mono',monospace" font-size="10">
+      <defs>
+        <marker id="gArr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+          <polygon points="0 0,6 3,0 6" fill="#9A948C"/>
+        </marker>
+      </defs>
+      <!-- row labels -->
+      <text x="8"  y="43"  font-size="9.5" font-weight="700" fill="#C0273A">Task1 HIGH</text>
+      <text x="8"  y="83"  font-size="9.5" font-weight="700" fill="#0A7B6C">Task2 LOW</text>
+      <text x="8"  y="123" font-size="9.5" font-weight="700" fill="#1A5FA8">Task3 MED</text>
+      <text x="8"  y="163" font-size="9.5" font-weight="700" fill="#6B6660">Semaphore</text>
+      <text x="8"  y="203" font-size="9.5" font-weight="700" fill="#B85C00">PC13 LED</text>
+
+      <!-- time scale: 0–3000ms, x=108 to x=728, 1px=0.207ms -->
+      <!-- axis -->
+      <line x1="108" y1="215" x2="728" y2="215" stroke="#DDD9CE" stroke-width="1.2"/>
+      <text x="108" y="225" text-anchor="middle" font-size="8">0</text>
+      <text x="214" y="225" text-anchor="middle" font-size="8">500</text>
+      <text x="315" y="225" text-anchor="middle" font-size="8">1000</text>
+      <text x="418" y="225" text-anchor="middle" font-size="8">1500</text>
+      <text x="521" y="225" text-anchor="middle" font-size="8">2000</text>
+      <text x="624" y="225" text-anchor="middle" font-size="8">2500</text>
+      <text x="728" y="225" text-anchor="middle" font-size="8">3000</text>
+
+      <!-- ── Task 2 LOW (holds sem 0→500) -->
+      <rect x="108" y="71" width="103" height="18" rx="2" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1"/>
+      <text x="159" y="83" text-anchor="middle" fill="#0A7B6C">holds SEM + blink</text>
+      <!-- LOW sleep 500-2500 -->
+      <rect x="211" y="71" width="412" height="18" rx="2" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="417" y="83" text-anchor="middle" fill="#9A948C">sleeping</text>
+      <!-- LOW 2500-3000 -->
+      <rect x="623" y="71" width="105" height="18" rx="2" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1"/>
+      <text x="675" y="83" text-anchor="middle" fill="#0A7B6C">running</text>
+
+      <!-- ── Task 3 MED busy 500–2000 (5×500ms), sleep 2000-2500 -->
+      <rect x="211" y="111" width="309" height="18" rx="2" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1"/>
+      <text x="365" y="123" text-anchor="middle" fill="#1A5FA8">busy-loop (blocks Task 1!)</text>
+      <rect x="520" y="111" width="103" height="18" rx="2" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="571" y="123" text-anchor="middle" fill="#9A948C">sleep 500ms</text>
+
+      <!-- ── Task 1 HIGH: blocked 0→2000, runs 2000→2500 -->
+      <rect x="108" y="31" width="412" height="18" rx="2" fill="#FFF0F2" stroke="#C0273A" stroke-dasharray="4,2"/>
+      <text x="314" y="43" text-anchor="middle" fill="#C0273A">BLOCKED (waiting for semaphore)</text>
+      <rect x="520" y="31" width="103" height="18" rx="2" fill="#C0273A" stroke="#C0273A"/>
+      <text x="571" y="43" text-anchor="middle" fill="white">runs ✓</text>
+
+      <!-- ── Semaphore state -->
+      <rect x="108" y="151" width="103" height="18" rx="2" fill="#E3F5F2" stroke="#0A7B6C"/>
+      <text x="159" y="163" text-anchor="middle" fill="#0A7B6C">held by LOW</text>
+      <rect x="211" y="151" width="309" height="18" rx="2" fill="#FFF0F2" stroke="#C0273A" stroke-dasharray="3,2"/>
+      <text x="365" y="163" text-anchor="middle" fill="#C0273A">still held — LOW sleeping!</text>
+      <rect x="520" y="151" width="103" height="18" rx="2" fill="#C0273A"/>
+      <text x="571" y="163" text-anchor="middle" fill="white">Give + Take</text>
+      <rect x="623" y="151" width="105" height="18" rx="2" fill="#E3F5F2" stroke="#0A7B6C"/>
+      <text x="675" y="163" text-anchor="middle" fill="#0A7B6C">free</text>
+
+      <!-- ── PC13 LED (MED task controls it) -->
+      <!-- MED is running 500-2000 so LED toggles -->
+      <rect x="211" y="191" width="309" height="18" rx="2" fill="#EBF3FF" stroke="#1A5FA8"/>
+      <text x="365" y="203" text-anchor="middle" fill="#1A5FA8">toggling (MED running)</text>
+      <rect x="108" y="191" width="103" height="18" rx="2" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="159" y="203" text-anchor="middle" fill="#9A948C">off</text>
+      <rect x="520" y="191" width="208" height="18" rx="2" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="624" y="203" text-anchor="middle" fill="#9A948C">off</text>
+
+      <!-- KEY annotation: inversion zone -->
+      <rect x="211" y="10" width="309" height="16" rx="3" fill="#FFF0F2" stroke="#C0273A"/>
+      <text x="365" y="21" text-anchor="middle" font-size="9" fill="#C0273A" font-weight="700">↑ PRIORITY INVERSION ZONE — ~2000 ms ↑</text>
+
+      <!-- vertical guides -->
+      <line x1="211" y1="25" x2="211" y2="215" stroke="#DDD9CE" stroke-dasharray="3,3" stroke-width="0.8"/>
+      <line x1="520" y1="25" x2="520" y2="215" stroke="#DDD9CE" stroke-dasharray="3,3" stroke-width="0.8"/>
+      <line x1="623" y1="25" x2="623" y2="215" stroke="#DDD9CE" stroke-dasharray="3,3" stroke-width="0.8"/>
+    </svg>
+    <div class="diagram-caption">Figure 7 — Priority inversion: Task 1 (HIGH) blocked ~2000 ms while Task 3 (MED) runs freely</div>
+  </div>
+
+  <!-- Mars Pathfinder -->
+  <h3 id="pi-mars">Real-World: Mars Pathfinder (1997)</h3>
+  <div class="card danger-card">
+    <div class="card-label">🚀 Historical Bug</div>
+    <p style="font-size:0.84rem;margin-bottom:8px;">NASA's Sojourner rover suffered repeated system resets on Mars due to priority inversion. An <strong>information bus task (HIGH)</strong> tried to lock a shared bus mutex held by a <strong>meteorological data task (LOW)</strong>. A medium-priority communications task preempted the LOW task, causing HIGH to miss its deadline. The VxWorks watchdog detected the missed deadline and issued a system reset.</p>
+    <p style="font-size:0.84rem;margin:0;">The fix was simple: <strong>enable priority inheritance on the mutex</strong> — a runtime config flag that had been left off. The lesson: always use mutexes (not binary semaphores) for resource protection, and enable priority inheritance.</p>
+  </div>
+
+  <!-- Fix: mutex inheritance -->
+  <h3 id="pi-fix">Fix: Priority Inheritance via Mutex</h3>
+  <p>Replace the binary semaphore with a <strong>mutex</strong>. When HIGH-priority Task 1 blocks on the mutex held by LOW-priority Task 2, the scheduler automatically raises Task 2's priority to match Task 1's. This prevents MED-priority Task 3 from preempting Task 2, so Task 2 finishes quickly and Task 1 unblocks.</p>
+
+  <div class="diagram-wrap">
+    <svg viewBox="0 0 720 210" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+      <!-- WITH INHERITANCE GANTT -->
+      <text x="420" y="14" text-anchor="middle" font-size="11" font-weight="700" fill="#0A7B6C">With Priority Inheritance (Mutex)</text>
+      <text x="8"  y="43"  font-size="9.5" font-weight="700" fill="#C0273A">Task1 HIGH</text>
+      <text x="8"  y="83"  font-size="9.5" font-weight="700" fill="#0A7B6C">Task2 LOW</text>
+      <text x="8"  y="123" font-size="9.5" font-weight="700" fill="#1A5FA8">Task3 MED</text>
+
+      <line x1="108" y1="140" x2="728" y2="140" stroke="#DDD9CE" stroke-width="1"/>
+      <text x="108" y="153" text-anchor="middle" font-size="8">0</text>
+      <text x="214" y="153" text-anchor="middle" font-size="8">500</text>
+      <text x="315" y="153" text-anchor="middle" font-size="8">1000</text>
+
+      <!-- Task 2 LOW runs 0→500 boosted to HIGH priority → runs uninterrupted -->
+      <rect x="108" y="71" width="103" height="18" rx="2" fill="#C0273A" stroke="#0A7B6C" stroke-width="1.5" stroke-dasharray="4,2"/>
+      <text x="159" y="83" text-anchor="middle" fill="white">boosted to HIGH</text>
+      <!-- Task 2 gives mutex at ~500 -->
+      <!-- Task 1 runs 500→ -->
+      <rect x="108" y="31" width="103" height="18" rx="2" fill="#FFF0F2" stroke="#C0273A" stroke-dasharray="4,2"/>
+      <text x="159" y="43" text-anchor="middle" fill="#C0273A">blocked</text>
+      <rect x="211" y="31" width="517" height="18" rx="2" fill="#C0273A"/>
+      <text x="469" y="43" text-anchor="middle" fill="white">runs ✓ (unblocked at ~500 ms)</text>
+      <!-- Task 3 MED cannot run while LOW is boosted → runs after -->
+      <rect x="108" y="111" width="103" height="18" rx="2" fill="#F0EFE9" stroke="#DDD9CE"/>
+      <text x="159" y="123" text-anchor="middle" fill="#9A948C">waiting</text>
+      <rect x="211" y="111" width="517" height="18" rx="2" fill="#EBF3FF" stroke="#1A5FA8"/>
+      <text x="469" y="123" text-anchor="middle" fill="#1A5FA8">runs (after Task1 blocks again)</text>
+
+      <!-- inheritance arrow annotation -->
+      <line x1="108" y1="80" x2="108" y2="40" stroke="#0A7B6C" stroke-width="1.5" marker-end="url(#inhArr)"/>
+      <text x="114" y="64" font-size="8.5" fill="#0A7B6C">inherit</text>
+      <text x="114" y="74" font-size="8.5" fill="#0A7B6C">HIGH prio</text>
+      <!-- key result -->
+      <rect x="220" y="162" width="280" height="36" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+      <text x="360" y="179" text-anchor="middle" font-size="10" font-weight="700" fill="#0A7B6C">Task 1 blocked only ~500 ms</text>
+      <text x="360" y="194" text-anchor="middle" font-size="9" fill="#4A4A4A">vs 2000 ms with binary semaphore</text>
+      <defs>
+        <marker id="inhArr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+          <polygon points="0 0,7 3.5,0 7" fill="#0A7B6C"/>
+        </marker>
+      </defs>
+    </svg>
+    <div class="diagram-caption">Figure 8 — With mutex: LOW boosted to HIGH priority, MED cannot preempt, Task 1 unblocks ~500 ms</div>
+  </div>
+
+  <!-- 5 step mechanism -->
+  <h4>5-Step Priority Inheritance Mechanism</h4>
+  <div class="card">
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="background:var(--rose-lt);color:var(--rose);font-weight:700;font-size:0.72rem;min-width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">1</div>
+        <div style="font-size:0.82rem;">Task2 LOW (prio=1) calls <code>xSemaphoreTake(mutex)</code> and acquires it. Starts its critical section.</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="background:var(--rose-lt);color:var(--rose);font-weight:700;font-size:0.72rem;min-width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">2</div>
+        <div style="font-size:0.82rem;">Task1 HIGH (prio=3) wakes and calls <code>xSemaphoreTake(mutex)</code>. Mutex is held — Task1 blocks.</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="background:var(--rose-lt);color:var(--rose);font-weight:700;font-size:0.72rem;min-width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">3</div>
+        <div style="font-size:0.82rem;"><strong>Kernel raises Task2's priority to prio=3</strong> (same as the blocked Task1) — this is the inheritance step.</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="background:var(--rose-lt);color:var(--rose);font-weight:700;font-size:0.72rem;min-width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">4</div>
+        <div style="font-size:0.82rem;">Task3 MED (prio=2) tries to preempt but cannot — Task2 now has effective prio=3 and runs to completion.</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="background:var(--accent-lt);color:var(--accent);font-weight:700;font-size:0.72rem;min-width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">5</div>
+        <div style="font-size:0.82rem;">Task2 calls <code>xSemaphoreGive(mutex)</code>. Kernel <strong>restores</strong> Task2 to prio=1. Task1 unblocks and runs immediately.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Demo code -->
+  <h3 id="pi-code">Demo Project Code (Binary Semaphore — shows inversion)</h3>
+  <div class="card info-card" style="margin-bottom:12px;">
+    <div class="card-label">⚙ Key Design Choices</div>
+    <p style="font-size:0.82rem;margin:0;">The demo deliberately uses <code>xSemaphoreCreateBinary()</code> (not mutex) so that priority inheritance is <strong>disabled</strong> and the inversion manifests. Swap to <code>xSemaphoreCreateMutex()</code> to fix it. Task3's busy-wait uses <code>vApplicationTickHook</code> + a tick counter to avoid itself being blocked.</p>
+  </div>
+  <pre><code>/* priority-inversion/main.c — simplified */
+
+static SemaphoreHandle_t g_sem;          /* binary — no inheritance! */
+static volatile uint32_t g_ticks = 0;
+
+/* Task 1 — HIGH priority (3): blink PA0, waits for semaphore */
+void Task1(void *p) {
+    for (;;) {
+        xSemaphoreTake(g_sem, portMAX_DELAY);   /* blocks when LOW holds it */
+        GPIOA->ODR ^= (1u << 0);               /* PA0 toggle */
+        vTaskDelay(pdMS_TO_TICKS(500));
+        xSemaphoreGive(g_sem);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+/* Task 2 — LOW priority (1): blink PA1, holds semaphore during blink */
+void Task2(void *p) {
+    for (;;) {
+        xSemaphoreTake(g_sem, portMAX_DELAY);
+        GPIOA->ODR ^= (1u << 1);               /* PA1 toggle */
+        vTaskDelay(pdMS_TO_TICKS(500));         /* holds sem while sleeping! */
+        xSemaphoreGive(g_sem);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+/* Task 3 — MED priority (2): busy-loop for 5×500ms, sleep 500ms */
+void Task3(void *p) {
+    for (;;) {
+        uint32_t start = g_ticks;
+        while ((g_ticks - start) < 2500u)      /* 5 × 500ms busy */
+            ;
+        GPIOC->ODR ^= (1u << 13);              /* PC13 toggle */
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+/* Fix: change this line to observe the difference */
+g_sem = xSemaphoreCreateBinary();    /* shows inversion  */
+/* g_sem = xSemaphoreCreateMutex(); */ /* fixes inversion */</code></pre>
+
+  <div class="card ok-card">
+    <div class="card-label">✅ Summary: Binary Semaphore vs Mutex for Resources</div>
+    <div class="tbl-wrap" style="margin-top:8px;">
+      <table>
+        <thead><tr><th></th><th>Binary Semaphore</th><th>Mutex</th></tr></thead>
+        <tbody>
+          <tr><td>Priority inheritance</td><td style="color:var(--rose);">❌ None</td><td style="color:var(--accent);">✅ Automatic</td></tr>
+          <tr><td>Priority inversion risk</td><td style="color:var(--rose);">High</td><td style="color:var(--accent);">Mitigated</td></tr>
+          <tr><td>Ownership tracking</td><td style="color:var(--rose);">❌</td><td style="color:var(--accent);">✅</td></tr>
+          <tr><td>ISR safe</td><td style="color:var(--accent);">✅</td><td style="color:var(--rose);">❌</td></tr>
+          <tr><td>Use for resource protection</td><td style="color:var(--rose);">❌ Don't</td><td style="color:var(--accent);">✅ Always</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</section>
+
+</main>
+</div><!-- shell -->
+
+<script>
+/* Highlight active TOC link on scroll */
+const links = document.querySelectorAll('.toc-link');
+const sections = [...document.querySelectorAll('section, [id]')].filter(el => el.id);
+
+function onScroll() {
+  const y = window.scrollY + 80;
+  let active = null;
+  for (const el of sections) {
+    if (el.offsetTop <= y) active = el.id;
+  }
+  links.forEach(a => {
+    const href = a.getAttribute('href').slice(1);
+    a.classList.toggle('active', href === active);
+  });
+}
+window.addEventListener('scroll', onScroll, {passive: true});
+onScroll();
+</script>

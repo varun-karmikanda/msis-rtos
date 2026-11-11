@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Q V2 &amp; Q V3: sharing a pin, then synchronizing it</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --blue:     #35618C;
+    --blue-bg:  #EAF1F8;
+    --amber:    #A05A2C;
+    --amber-bg: #FAF0E6;
+    --teal:     #2E7D5B;
+    --teal-bg:  #E8F3ED;
+    --code-bg: #232830;
+    --code-ink:#D7DCE1;
+    --code-dim:#7C8794;
+    --code-acc:#8FBCE6;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  article{ max-width:960px; margin:0 auto; padding:60px 24px 110px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:27px; font-weight:700; line-height:1.3; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17px; color:var(--ink-soft); max-width:72ch; margin:0 0 8px; }
+  p{ max-width:76ch; margin:0 0 16px; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+
+  h2{ font-size:21px; font-weight:700; margin:48px 0 6px; letter-spacing:-.01em; }
+  h3{ font-size:15.5px; font-weight:700; margin:26px 0 10px; font-family:var(--mono); }
+  .sub{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin:0 0 16px; }
+  hr.div{ border:none; border-top:1px solid var(--rule); margin:44px 0; }
+
+  figure{ margin:20px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); margin-top:9px; max-width:80ch; }
+
+  .listing{ background:var(--code-bg); border-radius:9px; padding:14px 18px; margin:16px 0 22px; overflow-x:auto; }
+  .listing .fname{ font-family:var(--mono); font-size:11px; color:var(--code-dim); margin:0 0 10px; }
+  .listing code{ background:none; padding:0; color:var(--code-ink); font-size:12.5px; line-height:1.7; display:block; white-space:pre; }
+  .cm{ color:var(--code-dim); }
+  .rg{ color:var(--code-acc); }
+
+  table{ width:100%; border-collapse:collapse; margin:14px 0 24px; font-size:14px; }
+  th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); border-bottom:1.5px solid var(--ink); }
+  td.api{ font-family:var(--mono); font-size:12.5px; color:var(--blue); white-space:nowrap; }
+
+  .aside{ border-left:2px solid var(--amber-bg); padding-left:16px; margin:20px 0; font-size:15px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+
+  .legend{ display:flex; flex-wrap:wrap; margin:14px 0 18px; font-family:var(--mono); font-size:12px; color:var(--ink-soft); }
+  .legend span{ display:inline-flex; align-items:center; margin-right:22px; margin-bottom:6px; }
+  .legend i{ width:11px; height:11px; border-radius:3px; display:inline-block; margin-right:8px; }
+
+  .footline{ margin-top:52px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+</style>
+</head>
+<body>
+<article>
+
+  <p class="byline">stm32f103 workspace notes</p>
+  <h1>Q V2 &amp; Q V3: sharing a pin, then synchronizing it</h1>
+  <p class="dek">Two small modifications to the same program - first making each blink's on/off explicit, then making the whole blink exclusive with a mutex - and what each one actually changes about the program's behaviour.</p>
+
+  <hr class="div">
+
+  <!-- ============================================================ -->
+  <h2>Semaphore APIs used here</h2>
+  <p class="sub">just the three that Q V3 needs</p>
+  <p>A FreeRTOS mutex is a specific kind of semaphore - a lock with exactly one owner at a time, created and used through three calls.</p>
+
+  <table>
+    <thead><tr><th>Call</th><th>What it does</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="api">xSemaphoreCreateMutex()</td>
+        <td>Creates the lock itself, returned as a <code>SemaphoreHandle_t</code>. Starts "available" - the first task to ask for it gets it immediately.</td>
+      </tr>
+      <tr>
+        <td class="api">xSemaphoreTake(handle, ticks)</td>
+        <td>Asks for the lock. If it's free, returns immediately with the lock held. If it's not, the calling task moves to <em>Blocked</em> for up to <code>ticks</code> ticks (<code>portMAX_DELAY</code> = wait forever) rather than spinning.</td>
+      </tr>
+      <tr>
+        <td class="api">xSemaphoreGive(handle)</td>
+        <td>Releases the lock. If another task is Blocked waiting for it, that task becomes Ready immediately. For a mutex specifically, this must be called by the same task that took it.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p class="aside"><b>Why a mutex and not a plain semaphore.</b> A mutex adds two things a generic binary semaphore doesn't have: priority inheritance (irrelevant here, since both tasks share one priority) and an ownership rule - only the task that took it can give it back. That ownership rule is exactly the right shape for "protect this resource," which is what both Q V3's problem and its fix are about.</p>
+
+  <hr class="div">
+
+  <!-- ============================================================ -->
+  <h2>Q V2 - making on/off explicit</h2>
+  <p class="sub">same toggle rate, different loop shape</p>
+  <p>Q V1's loop toggled once per iteration, so "on" and "off" only existed implicitly, as alternating states across iterations. Q V2 restructures each task's loop to spell out a complete blink - on, delay, off, delay - in a single iteration.</p>
+
+  <div class="listing">
+    <p class="fname">shared-led-no-sync/main.c - both tasks, Q V2 shape</p>
+    <pre><code><span class="kw">static void</span> task1_toggle_1hz(<span class="kw">void</span> *pvParameters)
+{
+    <span class="kw">for</span> (;;) {
+        GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);           <span class="cm">// on</span>
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);           <span class="cm">// off</span>
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }                                        <span class="cm">// one iteration = one 2 s blink</span>
+}
+
+<span class="kw">static void</span> task2_toggle_2hz(<span class="kw">void</span> *pvParameters)
+{
+    <span class="kw">for</span> (;;) {
+        GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);           <span class="cm">// on</span>
+        vTaskDelay(pdMS_TO_TICKS(500));
+        GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);           <span class="cm">// off</span>
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }                                        <span class="cm">// one iteration = one 1 s blink</span>
+}</code></pre>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="v2-t">
+      <title id="v2-t">Q V2 timelines: task1 completes a blink every 2 seconds, task2 every 1 second, still no coordination between them</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="24" font-weight="700" fill="#35618C">Task1 (2 s / blink)</text>
+        <rect x="180" y="8" width="150" height="20" fill="#35618C"/>
+        <rect x="480" y="8" width="150" height="20" fill="#35618C"/>
+        <text x="255" y="22" text-anchor="middle" font-size="9.5" fill="#fff">on 1000 / off 1000</text>
+
+        <text x="10" y="74" font-weight="700" fill="#2E7D5B">Task2 (1 s / blink)</text>
+        <rect x="180" y="58" width="75" height="20" fill="#2E7D5B"/>
+        <rect x="330" y="58" width="75" height="20" fill="#2E7D5B"/>
+        <rect x="480" y="58" width="75" height="20" fill="#2E7D5B"/>
+        <rect x="630" y="58" width="75" height="20" fill="#2E7D5B"/>
+
+        <text x="10" y="124" font-weight="700" fill="#A05A2C">PC13, actually</text>
+        <rect x="180" y="108" width="525" height="20" fill="#FAF0E6" stroke="#A05A2C" stroke-dasharray="3,3"/>
+        <text x="440" y="122" text-anchor="middle" font-size="9.5" fill="#A05A2C">both tasks' toggles land on the same physical pin, unmediated</text>
+
+        <g stroke="#D8DAD3" stroke-dasharray="2,3">
+          <line x1="180" y1="0" x2="180" y2="150"/><line x1="330" y1="0" x2="330" y2="150"/>
+          <line x1="480" y1="0" x2="480" y2="150"/><line x1="630" y1="0" x2="630" y2="150"/><line x1="705" y1="0" x2="705" y2="150"/>
+        </g>
+        <text x="180" y="168" text-anchor="middle" font-size="10">0</text>
+        <text x="330" y="168" text-anchor="middle" font-size="10">1s</text>
+        <text x="480" y="168" text-anchor="middle" font-size="10">2s</text>
+        <text x="630" y="168" text-anchor="middle" font-size="10">3s</text>
+
+        <text x="400" y="200" text-anchor="middle" font-size="11" fill="#9198A0">the race from Q V1 is still here - Q V2 only changed how the loop body reads,</text>
+        <text x="400" y="216" text-anchor="middle" font-size="11" fill="#9198A0">not whether the two tasks' toggles can land in the same instant</text>
+      </g>
+    </svg>
+    <figcaption>The toggle rate is identical to Q V1 - this is purely a structural rewrite so each iteration is a complete, readable blink instead of half of one.</figcaption>
+  </figure>
+
+  <hr class="div">
+
+  <!-- ============================================================ -->
+  <h2>Q V3 - a mutex around the whole blink</h2>
+  <p class="sub">the race is gone - but so is the independent timing</p>
+  <p>Q V3 wraps each task's <em>entire</em> on-delay-off-delay sequence in <code>xSemaphoreTake()</code>/<code>xSemaphoreGive()</code> - not just the individual toggles.</p>
+
+  <div class="listing">
+    <p class="fname">shared-led-mutex/main.c - task1 (task2 is the same shape, 500 ms delays)</p>
+    <pre><code><span class="kw">static void</span> task1_toggle_1hz(<span class="kw">void</span> *pvParameters)
+{
+    <span class="kw">for</span> (;;) {
+        xSemaphoreTake(xLedMutex, portMAX_DELAY);
+        GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);           <span class="cm">// on</span>
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);           <span class="cm">// off</span>
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        xSemaphoreGive(xLedMutex);
+    }                                        <span class="cm">// mutex held for the FULL 2 s, not just each toggle</span>
+}</code></pre>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 800 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="v3-t">
+      <title id="v3-t">Q V3 timeline: the two tasks now take turns running whole blinks, rather than interleaving on their own schedules</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="24" font-weight="700" fill="#35618C">Task1</text>
+        <rect x="120" y="8" width="300" height="20" fill="#35618C"/>
+        <text x="270" y="22" text-anchor="middle" font-size="9.5" fill="#fff">holds mutex - full 2 s blink</text>
+        <rect x="570" y="8" width="230" height="20" fill="#F3F4F0" stroke="#9198A0" stroke-dasharray="2,2"/>
+        <text x="685" y="22" text-anchor="middle" font-size="9.5" fill="#9198A0">blocked on xSemaphoreTake()</text>
+
+        <text x="10" y="74" font-weight="700" fill="#2E7D5B">Task2</text>
+        <rect x="120" y="58" width="300" height="20" fill="#F3F4F0" stroke="#9198A0" stroke-dasharray="2,2"/>
+        <text x="270" y="72" text-anchor="middle" font-size="9.5" fill="#9198A0">blocked on xSemaphoreTake()</text>
+        <rect x="420" y="58" width="150" height="20" fill="#2E7D5B"/>
+        <text x="495" y="72" text-anchor="middle" font-size="9.5" fill="#fff">holds mutex</text>
+
+        <g stroke="#D8DAD3" stroke-dasharray="2,3">
+          <line x1="120" y1="0" x2="120" y2="150"/><line x1="420" y1="0" x2="420" y2="150"/><line x1="570" y1="0" x2="570" y2="150"/>
+        </g>
+        <text x="120" y="168" text-anchor="middle" font-size="10">0</text>
+        <text x="420" y="168" text-anchor="middle" font-size="10">2s</text>
+        <text x="570" y="168" text-anchor="middle" font-size="10">3s</text>
+
+        <text x="400" y="200" text-anchor="middle" font-size="11" fill="#9198A0">task2 wanted to blink every 1 s - it actually gets a turn only once every 3 s here,</text>
+        <text x="400" y="216" text-anchor="middle" font-size="11" fill="#9198A0">whenever task1 happens to release the mutex</text>
+      </g>
+    </svg>
+    <figcaption>The lost-toggle race is completely gone - but neither task's own 1&#8202;Hz/2&#8202;Hz timing survives contact with the other once the whole operation, not just the shared register access, is what gets locked.</figcaption>
+  </figure>
+
+  <h3>The trade-off, stated plainly</h3>
+  <ul>
+    <li><b>What's fixed:</b> the non-atomic <code>ODR</code> read-modify-write from Q V1/V2 can no longer be interrupted mid-sequence by the other task - correctness on the shared register is total.</li>
+    <li><b>What's given up:</b> the two tasks no longer run independently at all. Whichever one grabs the mutex first keeps the other blocked for its <em>entire</em> cycle, so they end up alternating whole blinks rather than interleaving on their own schedules.</li>
+    <li><b>The narrower alternative:</b> a mutex (or just <code>GPIOC-&gt;BSRR</code>, which sets/clears a single bit atomically in one write) around only the toggle itself, not the surrounding delays, would remove the same race while leaving each task free to keep its own timing.</li>
+  </ul>
+
+  <div class="footline">stm32f103 workspace notes &middot; continues from the shared-led-no-sync / shared-led-mutex notes</div>
+
+</article>
+</body>
+</html>

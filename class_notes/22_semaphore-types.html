@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FreeRTOS Semaphore Types</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAFAF8; --ink:#1E2125; --ink-soft:#5B6167; --ink-dim:#9198A0;
+    --rule:#E3E4DF; --panel:#F3F4F0;
+    --bin:#35618C;   --bin-bg:#EAF1F8;
+    --mtx:#2E7D5B;   --mtx-bg:#E8F3ED;
+    --rec:#6E5A96;   --rec-bg:#EFEBF5;
+    --cnt:#A05A2C;   --cnt-bg:#FAF0E6;
+    --code-bg:#232830; --code-ink:#D7DCE1; --code-dim:#7C8794; --code-acc:#8FBCE6;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:'IBM Plex Sans',-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased;}
+  code{font-family:var(--mono);background:#EFEFE9;padding:.1em .35em;border-radius:3px;font-size:.87em;color:#3B3F45;}
+  article{max-width:1000px;margin:0 auto;padding:60px 24px 110px;}
+  .byline{font-family:var(--mono);font-size:12.5px;color:var(--ink-dim);margin:0 0 6px;}
+  h1{font-size:29px;font-weight:700;line-height:1.28;margin:0 0 14px;letter-spacing:-.015em;}
+  .dek{font-size:17px;color:var(--ink-soft);max-width:74ch;margin:0 0 8px;}
+  p{max-width:76ch;margin:0 0 16px;}
+  hr.div{border:none;border-top:1px solid var(--rule);margin:46px 0;}
+
+  /* topic sections */
+  .topic{padding-top:46px;border-top:1px solid var(--rule);scroll-margin-top:20px;}
+  .topic:first-of-type{border-top:none;}
+  .topic-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px;}
+  .num{font-family:var(--mono);font-size:13px;padding:3px 10px;border-radius:5px;flex:none;font-weight:700;}
+  .topic-head h2{font-size:22px;font-weight:700;margin:0;letter-spacing:-.01em;}
+  .sub{font-family:var(--mono);font-size:12px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 16px;}
+
+  /* code listing */
+  .listing{background:var(--code-bg);border-radius:9px;padding:14px 18px;margin:16px 0 22px;overflow-x:auto;}
+  .listing .fname{font-family:var(--mono);font-size:11px;color:var(--code-dim);margin:0 0 10px;}
+  .listing code{background:none;padding:0;color:var(--code-ink);font-size:12.5px;line-height:1.7;display:block;white-space:pre;}
+  .cm{color:var(--code-dim);} .rg{color:var(--code-acc);} .kw{color:#E3B778;}
+
+  /* callout boxes */
+  .aside{border-left:3px solid;padding:12px 16px;margin:18px 0;font-size:15px;border-radius:0 8px 8px 0;}
+  .aside.bin{border-color:var(--bin);background:var(--bin-bg);}
+  .aside.mtx{border-color:var(--mtx);background:var(--mtx-bg);}
+  .aside.rec{border-color:var(--rec);background:var(--rec-bg);}
+  .aside.cnt{border-color:var(--cnt);background:var(--cnt-bg);}
+  .aside b{font-weight:700;}
+
+  /* comparison table */
+  table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-size:14px;}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top;}
+  thead th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-dim);border-bottom:1.5px solid var(--ink);}
+  td.api{font-family:var(--mono);font-size:12px;white-space:nowrap;}
+  .yes{color:var(--mtx);font-weight:700;} .no{color:var(--ink-dim);}
+
+  /* diagram */
+  figure{margin:20px 0 6px;}
+  figure svg{width:100%;height:auto;display:block;}
+  figcaption{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin-top:9px;max-width:78ch;}
+
+  .footline{margin-top:52px;padding-top:18px;border-top:1px solid var(--rule);font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);}
+</style>
+</head>
+<body>
+<article>
+
+<p class="byline">stm32f103 workspace notes</p>
+<h1>FreeRTOS Semaphore Types</h1>
+<p class="dek">Four types, one underlying queue mechanism. They differ in the rules the kernel enforces — ownership, count ceiling, and priority inheritance.</p>
+
+<!-- ============================================================ -->
+<!-- Overview diagram -->
+<!-- ============================================================ -->
+<figure>
+  <svg viewBox="0 0 960 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ov-t">
+    <title id="ov-t">The four FreeRTOS semaphore types at a glance</title>
+    <g font-family="IBM Plex Mono, monospace" font-size="12">
+      <!-- binary -->
+      <rect x="10"  y="10" width="215" height="170" rx="10" fill="#EAF1F8" stroke="#35618C" stroke-width="1.5"/>
+      <text x="117" y="36"  text-anchor="middle" font-weight="700" fill="#35618C">Binary</text>
+      <text x="117" y="56"  text-anchor="middle" font-size="10.5" fill="#1E2125">0 or 1</text>
+      <text x="117" y="75"  text-anchor="middle" font-size="10" fill="#5B6167">Signalling between tasks</text>
+      <text x="117" y="92"  text-anchor="middle" font-size="10" fill="#5B6167">or ISR → task</text>
+      <text x="117" y="120" text-anchor="middle" font-size="10" fill="#A05A2C">No owner</text>
+      <text x="117" y="137" text-anchor="middle" font-size="10" fill="#A05A2C">No inheritance</text>
+      <text x="117" y="162" text-anchor="middle" font-size="10" fill="#35618C">ISR-safe</text>
+
+      <!-- mutex -->
+      <rect x="248" y="10" width="215" height="170" rx="10" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.5"/>
+      <text x="355" y="36"  text-anchor="middle" font-weight="700" fill="#2E7D5B">Mutex</text>
+      <text x="355" y="56"  text-anchor="middle" font-size="10.5" fill="#1E2125">0 or 1, owned</text>
+      <text x="355" y="75"  text-anchor="middle" font-size="10" fill="#5B6167">Protecting a shared</text>
+      <text x="355" y="92"  text-anchor="middle" font-size="10" fill="#5B6167">resource</text>
+      <text x="355" y="120" text-anchor="middle" font-size="10" fill="#2E7D5B">Owner enforced</text>
+      <text x="355" y="137" text-anchor="middle" font-size="10" fill="#2E7D5B">Priority inheritance</text>
+      <text x="355" y="162" text-anchor="middle" font-size="10" fill="#A05A2C">Not ISR-safe</text>
+
+      <!-- recursive mutex -->
+      <rect x="486" y="10" width="215" height="170" rx="10" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.5"/>
+      <text x="593" y="36"  text-anchor="middle" font-weight="700" fill="#6E5A96">Recursive Mutex</text>
+      <text x="593" y="56"  text-anchor="middle" font-size="10.5" fill="#1E2125">0 to N, owned</text>
+      <text x="593" y="75"  text-anchor="middle" font-size="10" fill="#5B6167">Re-entrant code that</text>
+      <text x="593" y="92"  text-anchor="middle" font-size="10" fill="#5B6167">locks the same resource</text>
+      <text x="593" y="120" text-anchor="middle" font-size="10" fill="#6E5A96">Owner enforced</text>
+      <text x="593" y="137" text-anchor="middle" font-size="10" fill="#6E5A96">Priority inheritance</text>
+      <text x="593" y="162" text-anchor="middle" font-size="10" fill="#A05A2C">Not ISR-safe</text>
+
+      <!-- counting -->
+      <rect x="724" y="10" width="226" height="170" rx="10" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.5"/>
+      <text x="837" y="36"  text-anchor="middle" font-weight="700" fill="#A05A2C">Counting</text>
+      <text x="837" y="56"  text-anchor="middle" font-size="10.5" fill="#1E2125">0 to maxCount</text>
+      <text x="837" y="75"  text-anchor="middle" font-size="10" fill="#5B6167">Resource pools or</text>
+      <text x="837" y="92"  text-anchor="middle" font-size="10" fill="#5B6167">accumulating events</text>
+      <text x="837" y="120" text-anchor="middle" font-size="10" fill="#A05A2C">No owner</text>
+      <text x="837" y="137" text-anchor="middle" font-size="10" fill="#A05A2C">No inheritance</text>
+      <text x="837" y="162" text-anchor="middle" font-size="10" fill="#35618C">ISR-safe</text>
+    </g>
+  </svg>
+  <figcaption>All four are created via the semphr.h API and held as a SemaphoreHandle_t. The underlying kernel object is the same queue structure — only the creation call and enforcement rules differ.</figcaption>
+</figure>
+
+<hr class="div">
+
+<!-- ============================================================ -->
+<!-- 1. Binary semaphore -->
+<!-- ============================================================ -->
+<section class="topic" id="binary">
+  <div class="topic-head">
+    <span class="num" style="background:var(--bin-bg);color:var(--bin)">1</span>
+    <h2>Binary Semaphore</h2>
+  </div>
+  <p class="sub">xSemaphoreCreateBinary()</p>
+
+  <p>A single token — either available or not. No ownership: any task (or ISR) can give it, and any task can take it. The typical use is <strong>signalling</strong>: one side announces that something happened, the other side waits for that announcement before proceeding.</p>
+
+  <div class="aside bin">
+    <b>Simple model:</b> think of a doorbell. The person outside presses it (give). The person inside hears it and opens the door (take). The bell doesn't care who pressed it or who answered — it just records that it was pressed once.
+  </div>
+
+  <div class="listing">
+    <p class="fname">Example — ISR signals a task that a UART byte arrived</p>
+    <pre><code><span class="kw">static</span> SemaphoreHandle_t xByteReady;
+
+<span class="cm">/* ISR - runs in Handler mode when UART receives a byte */</span>
+<span class="kw">void</span> USART1_IRQHandler(<span class="kw">void</span>)
+{
+    BaseType_t xWoken = pdFALSE;
+    xByteReceived = USART1-&gt;DR;                     <span class="cm">/* read the byte */</span>
+    xSemaphoreGiveFromISR(xByteReady, &amp;xWoken);     <span class="cm">/* signal the task */</span>
+    portYIELD_FROM_ISR(xWoken);
+}
+
+<span class="cm">/* Task - processes the byte whenever the ISR says one arrived */</span>
+<span class="kw">static void</span> uart_rx_task(<span class="kw">void</span> *pv)
+{
+    <span class="kw">for</span> (;;) {
+        xSemaphoreTake(xByteReady, portMAX_DELAY);  <span class="cm">/* block until ISR gives */</span>
+        process(xByteReceived);                     <span class="cm">/* safe to read now */</span>
+    }
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    xByteReady = xSemaphoreCreateBinary();          <span class="cm">/* starts NOT available */</span>
+    xTaskCreate(uart_rx_task, <span class="rg">"rx"</span>, 128, NULL, 2, NULL);
+    vTaskStartScheduler();
+}</code></pre>
+  </div>
+
+  <p>Notice <code>xSemaphoreGiveFromISR()</code> rather than <code>xSemaphoreGive()</code> — ISR-safe variants exist for both binary and counting semaphores. Mutexes have no ISR variant at all because priority inheritance cannot work inside an ISR.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- 2. Mutex -->
+<!-- ============================================================ -->
+<section class="topic" id="mutex">
+  <div class="topic-head">
+    <span class="num" style="background:var(--mtx-bg);color:var(--mtx)">2</span>
+    <h2>Mutex</h2>
+  </div>
+  <p class="sub">xSemaphoreCreateMutex()</p>
+
+  <p>Structurally a binary semaphore, but with two extra rules: <strong>ownership</strong> (only the task that took it may give it back) and <strong>priority inheritance</strong> (if a higher-priority task blocks on it, the holder is temporarily boosted to the waiter's priority so it can finish quickly). Starts available — no pre-give needed. Use it to protect shared resources.</p>
+
+  <div class="aside mtx">
+    <b>Simple model:</b> a toilet key on a large ring at a petrol station. You take the key, go in, come back, and hand it back yourself — someone else can't return it for you. If the manager (high priority) is queuing behind a customer (low priority) who has the key, someone had better hurry up.
+  </div>
+
+  <div class="listing">
+    <p class="fname">Example — two tasks share a UART transmit function</p>
+    <pre><code><span class="kw">static</span> SemaphoreHandle_t xUartMutex;
+
+<span class="kw">void</span> uart_print(<span class="kw">const char</span> *s)
+{
+    xSemaphoreTake(xUartMutex, portMAX_DELAY);  <span class="cm">/* acquire */</span>
+    <span class="kw">while</span> (*s) {
+        <span class="kw">while</span> (!(USART1-&gt;SR &amp; USART_SR_TXE)) {}
+        USART1-&gt;DR = *s++;
+    }
+    xSemaphoreGive(xUartMutex);                 <span class="cm">/* release - SAME task */</span>
+}
+
+<span class="kw">static void</span> sensor_task(<span class="kw">void</span> *pv)
+{
+    <span class="kw">for</span> (;;) {
+        uart_print(<span class="rg">"sensor reading\r\n"</span>);
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+<span class="kw">static void</span> status_task(<span class="kw">void</span> *pv)
+{
+    <span class="kw">for</span> (;;) {
+        uart_print(<span class="rg">"status ok\r\n"</span>);
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    xUartMutex = xSemaphoreCreateMutex();       <span class="cm">/* starts available */</span>
+    xTaskCreate(sensor_task, <span class="rg">"sens"</span>, 128, NULL, 1, NULL);
+    xTaskCreate(status_task, <span class="rg">"stat"</span>, 128, NULL, 2, NULL);
+    vTaskStartScheduler();
+}</code></pre>
+  </div>
+
+  <p>Without the mutex, a context switch mid-print would interleave the two tasks' characters into garbled output. The mutex ensures one task's call to <code>uart_print()</code> runs to completion before the other starts.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- 3. Recursive mutex -->
+<!-- ============================================================ -->
+<section class="topic" id="recursive">
+  <div class="topic-head">
+    <span class="num" style="background:var(--rec-bg);color:var(--rec)">3</span>
+    <h2>Recursive Mutex</h2>
+  </div>
+  <p class="sub">xSemaphoreCreateRecursiveMutex() &nbsp;·&nbsp; xSemaphoreTakeRecursive() &nbsp;·&nbsp; xSemaphoreGiveRecursive()</p>
+
+  <p>A mutex the <strong>same task</strong> can take multiple times without deadlocking itself. Each take increments an internal count; the resource is only truly released when an equal number of gives have returned the count to zero. Same ownership and priority inheritance as a regular mutex.</p>
+
+  <div class="aside rec">
+    <b>When you need this:</b> a function that holds a lock calls another function that tries to take the same lock. With a plain mutex that would deadlock immediately — the first take succeeded, the second one blocks forever waiting for the holder (itself). A recursive mutex lets the same owner nest takes freely.
+  </div>
+
+  <div class="listing">
+    <p class="fname">Example — nested calls both lock the same resource</p>
+    <pre><code><span class="kw">static</span> SemaphoreHandle_t xBusMutex;
+
+<span class="cm">/* low-level: send one I2C byte — takes the bus mutex */</span>
+<span class="kw">void</span> i2c_write_byte(uint8_t b)
+{
+    xSemaphoreTakeRecursive(xBusMutex, portMAX_DELAY); <span class="cm">/* take #1 (or #2) */</span>
+    i2c_hw_send(b);
+    xSemaphoreGiveRecursive(xBusMutex);                <span class="cm">/* give #1 (or #2) */</span>
+}
+
+<span class="cm">/* high-level: write a register — ALSO takes the bus mutex */</span>
+<span class="kw">void</span> sensor_write_reg(uint8_t reg, uint8_t val)
+{
+    xSemaphoreTakeRecursive(xBusMutex, portMAX_DELAY); <span class="cm">/* take #1 */</span>
+    i2c_write_byte(reg);   <span class="cm">/* takes AGAIN (#2) -- would deadlock with plain mutex! */</span>
+    i2c_write_byte(val);   <span class="cm">/* takes AGAIN (#2) -- same */</span>
+    xSemaphoreGiveRecursive(xBusMutex);                <span class="cm">/* give #1 — count back to 0 */</span>
+}                                                      <span class="cm">/* bus truly released here   */</span>
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    xBusMutex = xSemaphoreCreateRecursiveMutex();
+    <span class="cm">/* ... create tasks ... */</span>
+    vTaskStartScheduler();
+}</code></pre>
+  </div>
+
+  <p>The count inside the recursive mutex: after <code>sensor_write_reg()</code> takes once (count=1), the first <code>i2c_write_byte()</code> takes again (count=2), gives (count=1), the second <code>i2c_write_byte()</code> takes (count=2), gives (count=1), then <code>sensor_write_reg()</code> gives (count=0, bus released). Other tasks can only enter after that final give.</p>
+</section>
+
+<!-- ============================================================ -->
+<!-- 4. Counting semaphore -->
+<!-- ============================================================ -->
+<section class="topic" id="counting">
+  <div class="topic-head">
+    <span class="num" style="background:var(--cnt-bg);color:var(--cnt)">4</span>
+    <h2>Counting Semaphore</h2>
+  </div>
+  <p class="sub">xSemaphoreCreateCounting(uxMaxCount, uxInitialCount)</p>
+
+  <p>Like a binary semaphore but the token count can rise above 1, up to a configured maximum. No ownership. Two distinct use-cases with opposite initial counts:</p>
+
+  <ul>
+    <li><strong>Resource pool</strong> — initialise to N (the pool size). Each take claims one resource, each give returns one. Blocks when the pool is exhausted.</li>
+    <li><strong>Event accumulation</strong> — initialise to 0. An ISR or producer gives once per event; a consumer takes once per event. If the producer runs faster than the consumer, the count accumulates rather than losing events the way a binary semaphore would.</li>
+  </ul>
+
+  <div class="aside cnt">
+    <b>Simple model (resource pool):</b> a car park with 3 spaces and a display showing "spaces available." Each car entering decrements the count; each car leaving increments it. A fourth car blocks at the barrier until someone leaves.
+  </div>
+
+  <div class="listing">
+    <p class="fname">Example A — resource pool (3 SPI chip-selects, multiple tasks share them)</p>
+    <pre><code><span class="cm">/* 3 CS lines available; start at maximum */</span>
+<span class="kw">static</span> SemaphoreHandle_t xCSPool;
+
+<span class="kw">void</span> spi_transaction(<span class="kw">void</span>)
+{
+    xSemaphoreTake(xCSPool, portMAX_DELAY); <span class="cm">/* claim one CS slot */</span>
+    spi_do_work();
+    xSemaphoreGive(xCSPool);               <span class="cm">/* return the slot */</span>
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    xCSPool = xSemaphoreCreateCounting(3, 3); <span class="cm">/* max=3, initial=3 */</span>
+    <span class="cm">/* ... */</span>
+}</code></pre>
+  </div>
+
+  <div class="listing">
+    <p class="fname">Example B — event accumulation (ISR fires faster than the task can consume)</p>
+    <pre><code><span class="kw">static</span> SemaphoreHandle_t xAdcEvents;
+
+<span class="cm">/* ADC conversion-complete ISR - fires frequently */</span>
+<span class="kw">void</span> ADC1_2_IRQHandler(<span class="kw">void</span>)
+{
+    BaseType_t xWoken = pdFALSE;
+    adc_store_sample(ADC1-&gt;DR);
+    xSemaphoreGiveFromISR(xAdcEvents, &amp;xWoken); <span class="cm">/* +1 to count */</span>
+    portYIELD_FROM_ISR(xWoken);
+}
+
+<span class="cm">/* processing task - takes one per event, never misses any */</span>
+<span class="kw">static void</span> adc_process_task(<span class="kw">void</span> *pv)
+{
+    <span class="kw">for</span> (;;) {
+        xSemaphoreTake(xAdcEvents, portMAX_DELAY); <span class="cm">/* -1 from count */</span>
+        process_one_sample();
+    }
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    xAdcEvents = xSemaphoreCreateCounting(20, 0); <span class="cm">/* max=20, initial=0 */</span>
+    <span class="cm">/* ... */</span>
+}</code></pre>
+  </div>
+
+  <p>If the ISR fires 5 times while the task is busy with one sample, the count reaches 5. The task then drains it one by one without losing any events. A binary semaphore in the same situation would only record "at least one," losing the other four.</p>
+</section>
+
+<hr class="div">
+
+<!-- ============================================================ -->
+<!-- Comparison table -->
+<!-- ============================================================ -->
+<h2>All four, side by side</h2>
+<table>
+  <thead>
+    <tr><th>Type</th><th>Create</th><th>Count</th><th>Owner enforced</th><th>Priority inheritance</th><th>ISR-safe give</th><th>Use for</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Binary</strong></td>
+      <td class="api">xSemaphoreCreateBinary()</td>
+      <td class="api">0 or 1</td>
+      <td class="no">No</td>
+      <td class="no">No</td>
+      <td class="yes">Yes</td>
+      <td>Signalling, ISR→task handoff</td>
+    </tr>
+    <tr>
+      <td><strong>Mutex</strong></td>
+      <td class="api">xSemaphoreCreateMutex()</td>
+      <td class="api">0 or 1</td>
+      <td class="yes">Yes</td>
+      <td class="yes">Yes</td>
+      <td class="no">No</td>
+      <td>Protecting shared resources</td>
+    </tr>
+    <tr>
+      <td><strong>Recursive mutex</strong></td>
+      <td class="api">xSemaphoreCreateRecursiveMutex()</td>
+      <td class="api">0 to N</td>
+      <td class="yes">Yes</td>
+      <td class="yes">Yes</td>
+      <td class="no">No</td>
+      <td>Re-entrant code, nested locking</td>
+    </tr>
+    <tr>
+      <td><strong>Counting</strong></td>
+      <td class="api">xSemaphoreCreateCounting(max, init)</td>
+      <td class="api">0 to max</td>
+      <td class="no">No</td>
+      <td class="no">No</td>
+      <td class="yes">Yes</td>
+      <td>Resource pools, event accumulation</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="footline">stm32f103 workspace notes &middot; FreeRTOS semaphore types &middot; semphr.h</div>
+
+</article>
+</body>
+</html>
