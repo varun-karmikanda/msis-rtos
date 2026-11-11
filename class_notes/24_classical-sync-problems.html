@@ -1,0 +1,904 @@
+<title>Classical Synchronisation Problems</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;500;600;700&family=Merriweather+Sans:wght@700&display=swap">
+<style>
+:root {
+  --bg:        #F7F6F2;
+  --bg-card:   #FFFFFF;
+  --bg-code:   #F0EFE9;
+  --border:    #DDD9CE;
+  --fg:        #1E1C18;
+  --fg-muted:  #6B6660;
+  --accent:    #0A7B6C;
+  --accent-lt: #E3F5F2;
+  --amber:     #B85C00;
+  --amber-lt:  #FFF4E5;
+  --rose:      #C0273A;
+  --rose-lt:   #FFF0F2;
+  --blue:      #1A5FA8;
+  --blue-lt:   #EBF3FF;
+  --purple:    #6D28D9;
+  --purple-lt: #EDE9FE;
+  --toc-w:     230px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:#1A1917;--bg-card:#242220;--bg-code:#2A2826;--border:#3A3835;
+    --fg:#EDE9E0;--fg-muted:#9A948C;--accent:#2BB8A4;--accent-lt:#0E2E2A;
+    --amber:#E08A3C;--amber-lt:#2A1D0A;--rose:#E8566A;--rose-lt:#2E0D12;
+    --blue:#5B9BDB;--blue-lt:#0E1E34;--purple:#A78BFA;--purple-lt:#1E1635;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#1A1917;--bg-card:#242220;--bg-code:#2A2826;--border:#3A3835;
+  --fg:#EDE9E0;--fg-muted:#9A948C;--accent:#2BB8A4;--accent-lt:#0E2E2A;
+  --amber:#E08A3C;--amber-lt:#2A1D0A;--rose:#E8566A;--rose-lt:#2E0D12;
+  --blue:#5B9BDB;--blue-lt:#0E1E34;--purple:#A78BFA;--purple-lt:#1E1635;
+  color-scheme:dark;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{font-size:15px;scroll-behavior:smooth;}
+body{
+  background:var(--bg);color:var(--fg);
+  font-family:'Inter',system-ui,sans-serif;
+  line-height:1.65;
+  padding-left:max(0px,env(safe-area-inset-left,0px));
+  padding-right:max(0px,env(safe-area-inset-right,0px));
+}
+.topbar{
+  position:sticky;top:0;z-index:50;
+  background:var(--bg-card);border-bottom:1px solid var(--border);
+  padding:0 max(16px,env(safe-area-inset-left,0px));
+  display:flex;align-items:center;justify-content:space-between;height:52px;
+}
+.topbar-title{font-family:'Merriweather Sans',sans-serif;font-size:.85rem;font-weight:700;color:var(--accent);letter-spacing:.04em;text-transform:uppercase;}
+.topbar-sub{font-size:.72rem;color:var(--fg-muted);}
+.shell{
+  display:flex;flex:1;align-items:flex-start;
+  max-width:1160px;margin:0 auto;width:100%;
+  padding:0 max(16px,env(safe-area-inset-left,0px));
+  gap:28px;
+}
+.sidebar{
+  width:var(--toc-w);flex-shrink:0;
+  position:sticky;top:52px;max-height:calc(100vh - 52px);
+  overflow-y:auto;padding:20px 0 40px;scrollbar-width:thin;
+}
+.toc-group{margin-bottom:18px;}
+.toc-group-label{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:var(--fg-muted);padding:0 4px;margin-bottom:5px;}
+.toc-link{display:block;padding:4px 8px;font-size:.78rem;color:var(--fg-muted);text-decoration:none;border-radius:4px;border-left:2px solid transparent;transition:background .15s,color .15s;}
+.toc-link:hover{background:var(--accent-lt);color:var(--accent);}
+.toc-link.active{color:var(--accent);border-left-color:var(--accent);background:var(--accent-lt);font-weight:500;}
+.toc-sub{padding-left:12px;font-size:.73rem;}
+main{flex:1;min-width:0;padding:32px 0 80px;}
+.section-header{display:flex;align-items:center;gap:12px;margin-bottom:22px;margin-top:52px;padding-bottom:10px;border-bottom:2px solid var(--border);}
+.section-header:first-child{margin-top:0;}
+.section-num{font-family:'JetBrains Mono',monospace;font-size:.7rem;font-weight:600;color:var(--bg);background:var(--accent);padding:2px 8px;border-radius:3px;letter-spacing:.06em;}
+.section-title{font-family:'Merriweather Sans',sans-serif;font-size:1.3rem;font-weight:700;}
+h3{font-family:'Merriweather Sans',sans-serif;font-size:1rem;font-weight:700;margin:26px 0 8px;}
+h4{font-size:.82rem;font-weight:600;color:var(--fg-muted);text-transform:uppercase;letter-spacing:.07em;margin:18px 0 6px;}
+p{margin-bottom:10px;max-width:70ch;}
+.diagram-wrap{margin:14px 0 22px;overflow-x:auto;}
+.diagram-wrap svg{display:block;max-width:100%;height:auto;}
+.diagram-caption{text-align:center;font-size:.7rem;color:var(--fg-muted);margin-top:5px;font-style:italic;}
+pre,code{font-family:'JetBrains Mono',monospace;}
+code{font-size:.79rem;background:var(--bg-code);padding:1px 5px;border-radius:3px;color:var(--accent);}
+pre{background:var(--bg-code);border:1px solid var(--border);border-radius:6px;padding:14px 16px;overflow-x:auto;font-size:.77rem;line-height:1.6;margin:10px 0 18px;}
+pre code{background:none;padding:0;color:inherit;}
+.card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin-bottom:18px;}
+.info-card{background:var(--blue-lt);border-color:var(--blue);border-left-width:4px;}
+.warn-card{background:var(--amber-lt);border-color:var(--amber);border-left-width:4px;}
+.ok-card{background:var(--accent-lt);border-color:var(--accent);border-left-width:4px;}
+.purple-card{background:var(--purple-lt);border-color:var(--purple);border-left-width:4px;}
+.card-label{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px;}
+.info-card .card-label{color:var(--blue);}
+.warn-card .card-label{color:var(--amber);}
+.ok-card .card-label{color:var(--accent);}
+.purple-card .card-label{color:var(--purple);}
+.tbl-wrap{overflow-x:auto;margin:10px 0 16px;}
+table{width:100%;border-collapse:collapse;font-size:.8rem;}
+th{background:var(--bg-code);padding:7px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border);}
+td{padding:6px 12px;border-bottom:1px solid var(--border);}
+tr:last-child td{border-bottom:none;}
+tr:hover td{background:var(--accent-lt);}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;}
+@media(max-width:640px){.two-col{grid-template-columns:1fr;}.sidebar{display:none;}}
+</style>
+
+<div class="topbar">
+  <div>
+    <div class="topbar-title">STM32 / FreeRTOS Training</div>
+    <div class="topbar-sub">Classical Synchronisation Problems &amp; Monitors</div>
+  </div>
+  <div style="font-size:.7rem;color:var(--fg-muted);">CO3 · Session 4</div>
+</div>
+
+<div class="shell">
+<nav class="sidebar">
+  <div class="toc-group">
+    <div class="toc-group-label">1 · Bounded Buffer</div>
+    <a class="toc-link" href="#bb-problem">Problem</a>
+    <a class="toc-link toc-sub" href="#bb-diagram">Diagram</a>
+    <a class="toc-link toc-sub" href="#bb-solution">Solution</a>
+    <a class="toc-link toc-sub" href="#bb-code">FreeRTOS Code</a>
+  </div>
+  <div class="toc-group">
+    <div class="toc-group-label">2 · Readers–Writers</div>
+    <a class="toc-link" href="#rw-problem">Problem</a>
+    <a class="toc-link toc-sub" href="#rw-variants">R1 / R2 Variants</a>
+    <a class="toc-link toc-sub" href="#rw-diagram">Diagram</a>
+    <a class="toc-link toc-sub" href="#rw-code">FreeRTOS Code</a>
+  </div>
+  <div class="toc-group">
+    <div class="toc-group-label">3 · Dining Philosophers</div>
+    <a class="toc-link" href="#dp-problem">Problem</a>
+    <a class="toc-link toc-sub" href="#dp-deadlock">Deadlock</a>
+    <a class="toc-link toc-sub" href="#dp-solution">Solutions</a>
+    <a class="toc-link toc-sub" href="#dp-code">FreeRTOS Code</a>
+  </div>
+  <div class="toc-group">
+    <div class="toc-group-label">4 · Sleeping Barber</div>
+    <a class="toc-link" href="#sb-problem">Problem</a>
+    <a class="toc-link toc-sub" href="#sb-diagram">Diagram</a>
+    <a class="toc-link toc-sub" href="#sb-code">FreeRTOS Code</a>
+  </div>
+  <div class="toc-group">
+    <div class="toc-group-label">5 · Monitors</div>
+    <a class="toc-link" href="#mon-concept">Concept</a>
+    <a class="toc-link toc-sub" href="#mon-condvar">Condition Variables</a>
+    <a class="toc-link toc-sub" href="#mon-freertos">FreeRTOS Analogy</a>
+    <a class="toc-link toc-sub" href="#mon-bb">Monitor: Bounded Buffer</a>
+  </div>
+</nav>
+
+<main>
+
+<!-- ══════════════════════════ 1. BOUNDED BUFFER ══════════════════════════ -->
+<section>
+<div class="section-header" id="bb-problem">
+  <span class="section-num">01</span>
+  <h2 class="section-title">Bounded Buffer (Producer–Consumer)</h2>
+</div>
+
+<p>A fixed-size circular buffer is shared between one or more <strong>producers</strong> (who insert items) and one or more <strong>consumers</strong> (who remove items). Three constraints must hold simultaneously:</p>
+<ul style="padding-left:20px;margin-bottom:12px;font-size:.88rem;">
+  <li>A producer must wait when the buffer is <strong>full</strong>.</li>
+  <li>A consumer must wait when the buffer is <strong>empty</strong>.</li>
+  <li>Only one actor may modify the buffer at a time (<strong>mutual exclusion</strong>).</li>
+</ul>
+
+<!-- Diagram -->
+<div class="diagram-wrap" id="bb-diagram">
+<svg viewBox="0 0 720 200" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+  <defs>
+    <marker id="a1" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#0A7B6C"/></marker>
+    <marker id="a2" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#C0273A"/></marker>
+    <marker id="a3" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#1A5FA8"/></marker>
+  </defs>
+
+  <!-- Producer -->
+  <rect x="14" y="72" width="100" height="56" rx="7" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1.8"/>
+  <text x="64" y="95" text-anchor="middle" font-size="12" font-weight="700" fill="#0A7B6C">Producer</text>
+  <text x="64" y="112" text-anchor="middle" font-size="10" fill="#4A4A4A">ADC / sensor</text>
+  <text x="64" y="124" text-anchor="middle" font-size="9" fill="#6B6660">ISR or task</text>
+
+  <!-- Arrow from producer -->
+  <line x1="114" y1="100" x2="165" y2="100" stroke="#0A7B6C" stroke-width="1.5" marker-end="url(#a1)"/>
+  <text x="140" y="93" text-anchor="middle" font-size="9" fill="#0A7B6C">insert</text>
+
+  <!-- Buffer slots (N=6, 4 filled, 1 in, 1 free) -->
+  <rect x="165" y="56" width="340" height="88" rx="8" fill="#F7F6F2" stroke="#DDD9CE" stroke-width="1.5"/>
+  <text x="335" y="46" text-anchor="middle" font-size="10" font-weight="700" fill="#6B6660">Circular Buffer  (N = 6 slots)</text>
+  <!-- slots -->
+  <!-- slot 0 filled -->
+  <rect x="175" y="70" width="48" height="60" rx="4" fill="#EBF3FF" stroke="#1A5FA8"/>
+  <text x="199" y="97" text-anchor="middle" font-size="9" font-weight="600" fill="#1A5FA8">[0]</text>
+  <text x="199" y="110" text-anchor="middle" font-size="8" fill="#6B6660">0x2A</text>
+  <!-- slot 1 filled -->
+  <rect x="228" y="70" width="48" height="60" rx="4" fill="#EBF3FF" stroke="#1A5FA8"/>
+  <text x="252" y="97" text-anchor="middle" font-size="9" font-weight="600" fill="#1A5FA8">[1]</text>
+  <text x="252" y="110" text-anchor="middle" font-size="8" fill="#6B6660">0x31</text>
+  <!-- slot 2 filled -->
+  <rect x="281" y="70" width="48" height="60" rx="4" fill="#EBF3FF" stroke="#1A5FA8"/>
+  <text x="305" y="97" text-anchor="middle" font-size="9" font-weight="600" fill="#1A5FA8">[2]</text>
+  <text x="305" y="110" text-anchor="middle" font-size="8" fill="#6B6660">0x0F</text>
+  <!-- slot 3 being inserted (green border) -->
+  <rect x="334" y="70" width="48" height="60" rx="4" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="2" stroke-dasharray="4,2"/>
+  <text x="358" y="97" text-anchor="middle" font-size="9" font-weight="600" fill="#0A7B6C">[3]</text>
+  <text x="358" y="110" text-anchor="middle" font-size="8" fill="#0A7B6C">← in</text>
+  <!-- slot 4 empty -->
+  <rect x="387" y="70" width="48" height="60" rx="4" fill="#F0EFE9" stroke="#DDD9CE"/>
+  <text x="411" y="100" text-anchor="middle" font-size="9" fill="#9A948C">[4]</text>
+  <text x="411" y="114" text-anchor="middle" font-size="8" fill="#9A948C">free</text>
+  <!-- slot 5 empty -->
+  <rect x="440" y="70" width="48" height="60" rx="4" fill="#F0EFE9" stroke="#DDD9CE"/>
+  <text x="464" y="100" text-anchor="middle" font-size="9" fill="#9A948C">[5]</text>
+  <text x="464" y="114" text-anchor="middle" font-size="8" fill="#9A948C">free</text>
+
+  <!-- out pointer -->
+  <text x="199" y="144" text-anchor="middle" font-size="8" fill="#C0273A">↑ out</text>
+
+  <!-- Arrow to consumer -->
+  <line x1="505" y1="100" x2="560" y2="100" stroke="#C0273A" stroke-width="1.5" marker-end="url(#a2)"/>
+  <text x="533" y="93" text-anchor="middle" font-size="9" fill="#C0273A">remove</text>
+
+  <!-- Consumer -->
+  <rect x="560" y="72" width="100" height="56" rx="7" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.8"/>
+  <text x="610" y="95" text-anchor="middle" font-size="12" font-weight="700" fill="#C0273A">Consumer</text>
+  <text x="610" y="112" text-anchor="middle" font-size="10" fill="#4A4A4A">process / log</text>
+  <text x="610" y="124" text-anchor="middle" font-size="9" fill="#6B6660">task</text>
+
+  <!-- Semaphore legend -->
+  <rect x="165" y="152" width="100" height="40" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="215" y="167" text-anchor="middle" font-size="9" font-weight="700" fill="#0A7B6C">empty = 6</text>
+  <text x="215" y="182" text-anchor="middle" font-size="8" fill="#6B6660">slots free (producer waits @0)</text>
+  <rect x="275" y="152" width="100" height="40" rx="5" fill="#FFF0F2" stroke="#C0273A"/>
+  <text x="325" y="167" text-anchor="middle" font-size="9" font-weight="700" fill="#C0273A">full = 0</text>
+  <text x="325" y="182" text-anchor="middle" font-size="8" fill="#6B6660">slots used (consumer waits @0)</text>
+  <rect x="385" y="152" width="100" height="40" rx="5" fill="#EBF3FF" stroke="#1A5FA8"/>
+  <text x="435" y="167" text-anchor="middle" font-size="9" font-weight="700" fill="#1A5FA8">mutex = 1</text>
+  <text x="435" y="182" text-anchor="middle" font-size="8" fill="#6B6660">protects head/tail pointers</text>
+</svg>
+<div class="diagram-caption">Figure 1 — Bounded buffer: 6-slot circular ring with producer/consumer and three semaphores</div>
+</div>
+
+<h3 id="bb-solution">Solution — Three Semaphores</h3>
+<div class="card">
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>Semaphore</th><th>Initial value</th><th>Producer calls</th><th>Consumer calls</th><th>Purpose</th></tr></thead>
+<tbody>
+<tr><td><code>empty</code></td><td>N (buffer size)</td><td>Take (before insert)</td><td>Give (after remove)</td><td>Counts free slots</td></tr>
+<tr><td><code>full</code></td><td>0</td><td>Give (after insert)</td><td>Take (before remove)</td><td>Counts filled slots</td></tr>
+<tr><td><code>mutex</code></td><td>1</td><td>Take/Give around buffer access</td><td>Take/Give around buffer access</td><td>Mutual exclusion on head/tail</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+
+<h3 id="bb-code">FreeRTOS Code</h3>
+<pre><code>#define N  8
+static uint8_t buf[N];
+static int head = 0, tail = 0;
+
+SemaphoreHandle_t empty, full, mutex;
+
+void init(void) {
+    empty = xSemaphoreCreateCounting(N, N); /* N free slots */
+    full  = xSemaphoreCreateCounting(N, 0); /* 0 filled slots */
+    mutex = xSemaphoreCreateMutex();
+}
+
+/* ── Producer ──────────────────────────────────────────── */
+void Producer(void *p) {
+    for (;;) {
+        uint8_t item = produce_item();
+
+        xSemaphoreTake(empty, portMAX_DELAY);  /* wait for a free slot  */
+        xSemaphoreTake(mutex, portMAX_DELAY);  /* lock buffer           */
+        buf[head] = item;
+        head = (head + 1) % N;
+        xSemaphoreGive(mutex);                 /* unlock                */
+        xSemaphoreGive(full);                  /* signal item available */
+    }
+}
+
+/* ── Consumer ──────────────────────────────────────────── */
+void Consumer(void *p) {
+    for (;;) {
+        xSemaphoreTake(full,  portMAX_DELAY);  /* wait for a filled slot */
+        xSemaphoreTake(mutex, portMAX_DELAY);  /* lock buffer            */
+        uint8_t item = buf[tail];
+        tail = (tail + 1) % N;
+        xSemaphoreGive(mutex);                 /* unlock                 */
+        xSemaphoreGive(empty);                 /* signal a slot freed    */
+
+        consume_item(item);
+    }
+}</code></pre>
+
+<div class="card warn-card">
+  <div class="card-label">⚠ Order matters</div>
+  <p style="margin:0;font-size:.84rem;">Take <code>empty</code>/<code>full</code> <em>before</em> taking <code>mutex</code>. If you take <code>mutex</code> first and then block on <code>empty</code>, you hold the lock while sleeping — the other party can never give back <code>empty</code> because it's also waiting for <code>mutex</code>. Deadlock.</p>
+</div>
+</section>
+
+<!-- ══════════════════════════ 2. READERS–WRITERS ══════════════════════════ -->
+<section>
+<div class="section-header" id="rw-problem">
+  <span class="section-num">02</span>
+  <h2 class="section-title">Readers–Writers Problem</h2>
+</div>
+
+<p>Multiple tasks share a data structure (a database record, a sensor cache). <strong>Readers</strong> only inspect it — multiple readers may run concurrently. <strong>Writers</strong> modify it — a writer needs exclusive access; no reader or other writer may run simultaneously.</p>
+
+<div class="diagram-wrap" id="rw-diagram">
+<svg viewBox="0 0 680 200" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+  <defs>
+    <marker id="rwa" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#1A5FA8"/></marker>
+    <marker id="rwb" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#C0273A"/></marker>
+  </defs>
+
+  <!-- Shared database -->
+  <rect x="270" y="60" width="140" height="80" rx="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="2"/>
+  <text x="340" y="90" text-anchor="middle" font-size="13" font-weight="700" fill="#1A5FA8">Shared</text>
+  <text x="340" y="108" text-anchor="middle" font-size="13" font-weight="700" fill="#1A5FA8">Database</text>
+  <text x="340" y="128" text-anchor="middle" font-size="9" fill="#6B6660">sensor cache / log</text>
+
+  <!-- Readers (concurrent allowed) -->
+  <rect x="30" y="20" width="90" height="32" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="75" y="38" text-anchor="middle" font-weight="700" fill="#0A7B6C">Reader 1</text>
+  <rect x="30" y="62" width="90" height="32" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="75" y="81" text-anchor="middle" font-weight="700" fill="#0A7B6C">Reader 2</text>
+  <rect x="30" y="104" width="90" height="32" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="75" y="123" text-anchor="middle" font-weight="700" fill="#0A7B6C">Reader 3</text>
+
+  <line x1="120" y1="36"  x2="270" y2="82"  stroke="#0A7B6C" stroke-width="1.3" marker-end="url(#rwa)"/>
+  <line x1="120" y1="78"  x2="270" y2="96"  stroke="#0A7B6C" stroke-width="1.3" marker-end="url(#rwa)"/>
+  <line x1="120" y1="120" x2="270" y2="110" stroke="#0A7B6C" stroke-width="1.3" marker-end="url(#rwa)"/>
+  <text x="150" y="60" font-size="9" fill="#0A7B6C" font-weight="600">concurrent ✓</text>
+
+  <!-- Writer (exclusive) -->
+  <rect x="560" y="66" width="100" height="68" rx="7" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.8"/>
+  <text x="610" y="90" text-anchor="middle" font-size="12" font-weight="700" fill="#C0273A">Writer</text>
+  <text x="610" y="106" text-anchor="middle" font-size="10" fill="#4A4A4A">exclusive</text>
+  <text x="610" y="120" text-anchor="middle" font-size="9" fill="#6B6660">blocks all readers</text>
+  <text x="610" y="130" text-anchor="middle" font-size="9" fill="#6B6660">&amp; other writers</text>
+  <line x1="560" y1="100" x2="410" y2="100" stroke="#C0273A" stroke-width="1.5" marker-end="url(#rwb)"/>
+  <text x="488" y="92" font-size="9" fill="#C0273A" font-weight="600">exclusive ✗ with readers</text>
+
+  <!-- read_count box -->
+  <rect x="270" y="152" width="140" height="34" rx="5" fill="#F0EFE9" stroke="#DDD9CE"/>
+  <text x="340" y="167" text-anchor="middle" font-size="9" font-weight="700" fill="#6B6660">read_count (int)</text>
+  <text x="340" y="181" text-anchor="middle" font-size="8" fill="#9A948C">protected by rc_mutex</text>
+</svg>
+<div class="diagram-caption">Figure 2 — Multiple readers share concurrently; a writer gets exclusive access</div>
+</div>
+
+<h3 id="rw-variants">Two Classic Variants</h3>
+<div class="two-col">
+  <div class="card info-card">
+    <div class="card-label">First Readers Preference (R1)</div>
+    <p style="font-size:.83rem;margin:0;">Once even one reader is active, new readers are allowed in immediately. Writers wait until <em>all</em> readers leave. Risk: <strong>writer starvation</strong> — a stream of readers can indefinitely block the writer.</p>
+  </div>
+  <div class="card warn-card">
+    <div class="card-label">First Writers Preference (R2)</div>
+    <p style="font-size:.83rem;margin:0;">Once a writer is waiting, no new readers start. Waiting readers queue behind the writer. Risk: <strong>reader starvation</strong> — a burst of writers starves readers. In practice, R1 is most commonly implemented.</p>
+  </div>
+</div>
+
+<h3 id="rw-code">FreeRTOS Code (R1 — Readers Preference)</h3>
+<pre><code>static int read_count = 0;
+SemaphoreHandle_t rc_mutex;   /* protects read_count */
+SemaphoreHandle_t rw_mutex;   /* exclusive write / first-reader lock */
+
+void rw_init(void) {
+    rc_mutex = xSemaphoreCreateMutex();
+    rw_mutex = xSemaphoreCreateBinary();
+    xSemaphoreGive(rw_mutex);
+}
+
+/* ── Reader ────────────────────────────────────────────── */
+void Reader(void *p) {
+    for (;;) {
+        /* Entry: increment reader count; first reader locks writer out */
+        xSemaphoreTake(rc_mutex, portMAX_DELAY);
+        read_count++;
+        if (read_count == 1)
+            xSemaphoreTake(rw_mutex, portMAX_DELAY); /* first reader locks */
+        xSemaphoreGive(rc_mutex);
+
+        /* ── critical section: read shared data ── */
+        read_data();
+
+        /* Exit: decrement reader count; last reader unlocks writer */
+        xSemaphoreTake(rc_mutex, portMAX_DELAY);
+        read_count--;
+        if (read_count == 0)
+            xSemaphoreGive(rw_mutex); /* last reader unlocks */
+        xSemaphoreGive(rc_mutex);
+
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+}
+
+/* ── Writer ────────────────────────────────────────────── */
+void Writer(void *p) {
+    for (;;) {
+        xSemaphoreTake(rw_mutex, portMAX_DELAY); /* full exclusion */
+        write_data();
+        xSemaphoreGive(rw_mutex);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}</code></pre>
+
+<div class="card ok-card">
+  <div class="card-label">Key insight</div>
+  <p style="margin:0;font-size:.84rem;"><code>rw_mutex</code> is taken by the <em>first reader</em> and released by the <em>last reader</em> — not by the same entity. This is why a binary semaphore works here but a mutex (owner-tracked) cannot be used for <code>rw_mutex</code>.</p>
+</div>
+</section>
+
+<!-- ══════════════════════════ 3. DINING PHILOSOPHERS ══════════════════════ -->
+<section>
+<div class="section-header" id="dp-problem">
+  <span class="section-num">03</span>
+  <h2 class="section-title">Dining Philosophers</h2>
+</div>
+
+<p>Five philosophers sit at a round table. Between each adjacent pair lies one fork — five forks total. A philosopher alternates between thinking and eating. To eat, she must pick up <em>both</em> the fork on her left and the fork on her right. After eating, she puts both forks down.</p>
+
+<!-- Table diagram -->
+<div class="diagram-wrap" id="dp-deadlock">
+<svg viewBox="0 0 500 430" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+  <defs>
+    <marker id="dp1" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#C0273A"/></marker>
+  </defs>
+
+  <!-- table -->
+  <circle cx="250" cy="215" r="90" fill="#FFF4E5" stroke="#B85C00" stroke-width="2"/>
+  <text x="250" y="210" text-anchor="middle" font-size="13" font-weight="700" fill="#B85C00">Round</text>
+  <text x="250" y="228" text-anchor="middle" font-size="13" font-weight="700" fill="#B85C00">Table</text>
+
+  <!-- Philosophers (P0 top, clockwise) -->
+  <!-- P0 top -->
+  <rect x="200" y="30" width="100" height="46" rx="7" fill="#E3F5F2" stroke="#0A7B6C" stroke-width="1.8"/>
+  <text x="250" y="50" text-anchor="middle" font-size="12" font-weight="700" fill="#0A7B6C">P0</text>
+  <text x="250" y="66" text-anchor="middle" font-size="9"  fill="#6B6660">thinking</text>
+
+  <!-- P1 top-right -->
+  <rect x="368" y="100" width="100" height="46" rx="7" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.8"/>
+  <text x="418" y="120" text-anchor="middle" font-size="12" font-weight="700" fill="#C0273A">P1</text>
+  <text x="418" y="136" text-anchor="middle" font-size="9"  fill="#6B6660">waiting</text>
+
+  <!-- P2 bottom-right -->
+  <rect x="330" y="298" width="100" height="46" rx="7" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.8"/>
+  <text x="380" y="318" text-anchor="middle" font-size="12" font-weight="700" fill="#C0273A">P2</text>
+  <text x="380" y="334" text-anchor="middle" font-size="9"  fill="#6B6660">waiting</text>
+
+  <!-- P3 bottom-left -->
+  <rect x="68" y="298" width="100" height="46" rx="7" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.8"/>
+  <text x="118" y="318" text-anchor="middle" font-size="12" font-weight="700" fill="#C0273A">P3</text>
+  <text x="118" y="334" text-anchor="middle" font-size="9"  fill="#6B6660">waiting</text>
+
+  <!-- P4 top-left -->
+  <rect x="30" y="100" width="100" height="46" rx="7" fill="#FFF0F2" stroke="#C0273A" stroke-width="1.8"/>
+  <text x="80" y="120" text-anchor="middle" font-size="12" font-weight="700" fill="#C0273A">P4</text>
+  <text x="80" y="136" text-anchor="middle" font-size="9"  fill="#6B6660">waiting</text>
+
+  <!-- Forks (between philosophers on circle edge) -->
+  <!-- F0 between P0 and P1, upper-right -->
+  <ellipse cx="330" cy="120" rx="18" ry="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5" transform="rotate(-55 330 120)"/>
+  <text x="343" y="106" text-anchor="middle" font-size="9" font-weight="700" fill="#1A5FA8">F0</text>
+
+  <!-- F1 between P1 and P2, right -->
+  <ellipse cx="370" cy="243" rx="18" ry="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5" transform="rotate(-90 370 243)"/>
+  <text x="393" y="248" text-anchor="middle" font-size="9" font-weight="700" fill="#1A5FA8">F1</text>
+
+  <!-- F2 between P2 and P3, bottom -->
+  <ellipse cx="250" cy="322" rx="18" ry="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5"/>
+  <text x="250" y="340" text-anchor="middle" font-size="9" font-weight="700" fill="#1A5FA8">F2</text>
+
+  <!-- F3 between P3 and P4, left -->
+  <ellipse cx="128" cy="243" rx="18" ry="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5" transform="rotate(-90 128 243)"/>
+  <text x="105" y="248" text-anchor="middle" font-size="9" font-weight="700" fill="#1A5FA8">F3</text>
+
+  <!-- F4 between P4 and P0, upper-left -->
+  <ellipse cx="170" cy="120" rx="18" ry="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="1.5" transform="rotate(55 170 120)"/>
+  <text x="155" y="106" text-anchor="middle" font-size="9" font-weight="700" fill="#1A5FA8">F4</text>
+
+  <!-- Deadlock annotation: each picks up LEFT fork, waits for right -->
+  <text x="250" y="390" text-anchor="middle" font-size="10" font-weight="700" fill="#C0273A">DEADLOCK: each holds one fork, waits for the other</text>
+  <text x="250" y="408" text-anchor="middle" font-size="9" fill="#6B6660">Circular wait: P0→F0, P1→F1, P2→F2, P3→F3, P4→F4 (each held by right neighbour)</text>
+</svg>
+<div class="diagram-caption">Figure 3 — Five philosophers; naive "pick left first" causes circular wait deadlock</div>
+</div>
+
+<h3 id="dp-solution">Solutions</h3>
+<div class="two-col">
+  <div class="card ok-card">
+    <div class="card-label">✅ Asymmetric / Resource Ordering</div>
+    <p style="font-size:.83rem;">One philosopher (P4) picks up the <em>right</em> fork first instead of the left. This breaks the circular wait. At least one philosopher can always eat.</p>
+  </div>
+  <div class="card info-card">
+    <div class="card-label">Arbitrator (Waiter) Pattern</div>
+    <p style="font-size:.83rem;">A mutex-protected waiter grants permission to pick up both forks atomically. Only four philosophers may attempt to eat simultaneously (counting semaphore init=4 for N=5 table).</p>
+  </div>
+</div>
+
+<h3 id="dp-code">FreeRTOS Code (Asymmetric)</h3>
+<pre><code>#define N 5
+SemaphoreHandle_t fork[N];
+
+void phil_init(void) {
+    for (int i = 0; i < N; i++)
+        fork[i] = xSemaphoreCreateMutex();
+}
+
+void Philosopher(void *arg) {
+    int id = (int)(intptr_t)arg;
+    int left  = id;
+    int right = (id + 1) % N;
+
+    for (;;) {
+        /* Think */
+        vTaskDelay(pdMS_TO_TICKS(200 + (id * 37)));
+
+        /* Pick up forks — P4 reverses order to break circular wait */
+        if (id == (N - 1)) {
+            xSemaphoreTake(fork[right], portMAX_DELAY);
+            xSemaphoreTake(fork[left],  portMAX_DELAY);
+        } else {
+            xSemaphoreTake(fork[left],  portMAX_DELAY);
+            xSemaphoreTake(fork[right], portMAX_DELAY);
+        }
+
+        /* Eat */
+        vTaskDelay(pdMS_TO_TICKS(100));
+
+        /* Put forks down */
+        xSemaphoreGive(fork[left]);
+        xSemaphoreGive(fork[right]);
+    }
+}</code></pre>
+</section>
+
+<!-- ══════════════════════════ 4. SLEEPING BARBER ══════════════════════════ -->
+<section>
+<div class="section-header" id="sb-problem">
+  <span class="section-num">04</span>
+  <h2 class="section-title">Sleeping Barber</h2>
+</div>
+
+<p>A barbershop has one barber, one barber chair, and a waiting room with <strong>N</strong> seats. If no customers are present, the barber sleeps. A customer who arrives:</p>
+<ul style="padding-left:20px;margin-bottom:12px;font-size:.88rem;">
+  <li>Wakes the barber if he is asleep.</li>
+  <li>Sits in a waiting seat if the barber is busy and seats are free.</li>
+  <li><strong>Leaves</strong> if all waiting seats are taken.</li>
+</ul>
+<p>This models any server that should sleep when idle and handle bounded-queue overflow gracefully — a thread pool, a UART Rx handler, a network packet processor.</p>
+
+<!-- Diagram -->
+<div class="diagram-wrap" id="sb-diagram">
+<svg viewBox="0 0 720 220" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif">
+  <defs>
+    <marker id="sba" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#0A7B6C"/></marker>
+    <marker id="sbb" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#C0273A"/></marker>
+    <marker id="sbc" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#6B6660"/></marker>
+  </defs>
+
+  <!-- Waiting room -->
+  <rect x="20" y="40" width="320" height="100" rx="8" fill="#F0EFE9" stroke="#DDD9CE" stroke-width="1.5"/>
+  <text x="180" y="30" text-anchor="middle" font-size="11" font-weight="700" fill="#6B6660">Waiting Room (N=4 seats)</text>
+  <!-- seats -->
+  <rect x="34"  y="56" width="60" height="70" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="64"  y="90" text-anchor="middle" font-size="10" font-weight="600" fill="#0A7B6C">C1</text>
+  <text x="64"  y="106" text-anchor="middle" font-size="8" fill="#6B6660">waiting</text>
+  <rect x="104" y="56" width="60" height="70" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="134" y="90" text-anchor="middle" font-size="10" font-weight="600" fill="#0A7B6C">C2</text>
+  <text x="134" y="106" text-anchor="middle" font-size="8" fill="#6B6660">waiting</text>
+  <rect x="174" y="56" width="60" height="70" rx="5" fill="#F0EFE9" stroke="#DDD9CE" stroke-dasharray="3,2"/>
+  <text x="204" y="96" text-anchor="middle" font-size="9" fill="#9A948C">empty</text>
+  <rect x="244" y="56" width="60" height="70" rx="5" fill="#F0EFE9" stroke="#DDD9CE" stroke-dasharray="3,2"/>
+  <text x="274" y="96" text-anchor="middle" font-size="9" fill="#9A948C">empty</text>
+
+  <!-- Customer arrives arrow -->
+  <line x1="18" y1="96" x2="0" y2="96" stroke="#0A7B6C" stroke-width="0"/>
+  <text x="10" y="170" font-size="9" fill="#0A7B6C" transform="rotate(-90 10 170)" text-anchor="middle">customers arrive</text>
+  <line x1="20" y1="165" x2="20" y2="148" stroke="#0A7B6C" stroke-width="1.5" marker-end="url(#sba)"/>
+  <line x1="20" y1="185" x2="20" y2="202" stroke="#C0273A" stroke-width="1.5" marker-end="url(#sbb)"/>
+  <text x="36" y="202" font-size="8.5" fill="#C0273A">leave if full</text>
+
+  <!-- Arrow into barber shop -->
+  <line x1="340" y1="96" x2="390" y2="96" stroke="#0A7B6C" stroke-width="1.5" marker-end="url(#sba)"/>
+
+  <!-- Barber chair / shop -->
+  <rect x="390" y="40" width="160" height="100" rx="8" fill="#EBF3FF" stroke="#1A5FA8" stroke-width="2"/>
+  <text x="470" y="70" text-anchor="middle" font-size="12" font-weight="700" fill="#1A5FA8">Barber</text>
+  <text x="470" y="90" text-anchor="middle" font-size="10" fill="#4A4A4A">cutting hair</text>
+  <text x="470" y="108" text-anchor="middle" font-size="9"  fill="#6B6660">(or sleeping</text>
+  <text x="470" y="120" text-anchor="middle" font-size="9"  fill="#6B6660">if no customers)</text>
+
+  <!-- Done arrow out -->
+  <line x1="550" y1="90" x2="600" y2="90" stroke="#1A5FA8" stroke-width="1.5" marker-end="url(#sba)"/>
+  <rect x="600" y="68" width="100" height="44" rx="6" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="650" y="88" text-anchor="middle" font-size="10" font-weight="600" fill="#0A7B6C">Customer</text>
+  <text x="650" y="103" text-anchor="middle" font-size="9" fill="#6B6660">leaves happy</text>
+
+  <!-- Semaphores legend -->
+  <rect x="20"  y="158" width="85" height="44" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="62"  y="173" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0A7B6C">customers</text>
+  <text x="62"  y="186" text-anchor="middle" font-size="8" fill="#6B6660">init=0, customers</text>
+  <text x="62"  y="197" text-anchor="middle" font-size="8" fill="#6B6660">give; barber takes</text>
+  <rect x="115" y="158" width="80" height="44" rx="5" fill="#EBF3FF" stroke="#1A5FA8"/>
+  <text x="155" y="173" text-anchor="middle" font-size="8.5" font-weight="700" fill="#1A5FA8">barber</text>
+  <text x="155" y="186" text-anchor="middle" font-size="8" fill="#6B6660">init=0, barber</text>
+  <text x="155" y="197" text-anchor="middle" font-size="8" fill="#6B6660">gives; customer takes</text>
+  <rect x="205" y="158" width="70" height="44" rx="5" fill="#FFF4E5" stroke="#B85C00"/>
+  <text x="240" y="173" text-anchor="middle" font-size="8.5" font-weight="700" fill="#B85C00">mutex</text>
+  <text x="240" y="186" text-anchor="middle" font-size="8" fill="#6B6660">protects</text>
+  <text x="240" y="197" text-anchor="middle" font-size="8" fill="#6B6660">waiting_count</text>
+</svg>
+<div class="diagram-caption">Figure 4 — Sleeping Barber: waiting room with N=4 seats; barber sleeps when idle</div>
+</div>
+
+<h3 id="sb-code">FreeRTOS Code</h3>
+<pre><code>#define N_SEATS  4
+static int waiting = 0;
+
+SemaphoreHandle_t customers; /* barber sleeps on this (init 0) */
+SemaphoreHandle_t barber;    /* customer waits for barber (init 0) */
+SemaphoreHandle_t sb_mutex;  /* protects 'waiting' count */
+
+void sb_init(void) {
+    customers = xSemaphoreCreateCounting(N_SEATS, 0);
+    barber    = xSemaphoreCreateBinary();
+    sb_mutex  = xSemaphoreCreateMutex();
+}
+
+/* ── Barber task (single) ──────────────────────────────── */
+void BarberTask(void *p) {
+    for (;;) {
+        xSemaphoreTake(customers, portMAX_DELAY); /* sleep until a customer */
+        xSemaphoreTake(sb_mutex,  portMAX_DELAY);
+        waiting--;
+        xSemaphoreGive(barber);    /* invite one customer to the chair */
+        xSemaphoreGive(sb_mutex);
+        cut_hair();
+    }
+}
+
+/* ── Customer task (many instances / ISR-spawned) ──────── */
+void CustomerTask(void *p) {
+    xSemaphoreTake(sb_mutex, portMAX_DELAY);
+    if (waiting < N_SEATS) {
+        waiting++;
+        xSemaphoreGive(customers); /* wake / queue for barber */
+        xSemaphoreGive(sb_mutex);
+        xSemaphoreTake(barber, portMAX_DELAY); /* wait for chair */
+        get_haircut();
+    } else {
+        xSemaphoreGive(sb_mutex);
+        /* waiting room full — leave immediately */
+    }
+    vTaskDelete(NULL);
+}</code></pre>
+
+<div class="card info-card">
+  <div class="card-label">Embedded analogy</div>
+  <p style="margin:0;font-size:.84rem;">Replace "barber" with a <strong>UART DMA ISR handler task</strong>. The barber is the processing task (blocked when idle), customers are incoming DMA-complete interrupts, the waiting room is a bounded message queue. Customers that arrive when the queue is full are simply dropped — acceptable packet loss behaviour.</p>
+</div>
+</section>
+
+<!-- ══════════════════════════ 5. MONITORS ══════════════════════════════ -->
+<section>
+<div class="section-header" id="mon-concept">
+  <span class="section-num">05</span>
+  <h2 class="section-title">Monitors</h2>
+</div>
+
+<p>A <strong>monitor</strong> is a higher-level synchronisation construct that bundles a shared data structure, its mutex, and a set of <em>condition variables</em> into a single module. The language or runtime guarantees mutual exclusion automatically — the programmer cannot forget to lock.</p>
+
+<p>Introduced by C.A.R. Hoare (1974) and popularised by Java's <code>synchronized</code> blocks, C++17's <code>std::condition_variable</code>, and POSIX <code>pthread_mutex</code> + <code>pthread_cond</code>.</p>
+
+<!-- Monitor structure diagram -->
+<div class="diagram-wrap">
+<svg viewBox="0 0 680 240" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+  <defs>
+    <marker id="ma" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#6D28D9"/></marker>
+    <marker id="mb" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><polygon points="0 0,7 3.5,0 7" fill="#0A7B6C"/></marker>
+  </defs>
+
+  <!-- Monitor boundary -->
+  <rect x="160" y="18" width="360" height="200" rx="10" fill="#EDE9FE" stroke="#6D28D9" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="340" y="14" text-anchor="middle" font-size="11" font-weight="700" fill="#6D28D9">MONITOR</text>
+
+  <!-- Shared data -->
+  <rect x="200" y="30" width="280" height="36" rx="5" fill="#DDD6FE" stroke="#6D28D9"/>
+  <text x="340" y="45" text-anchor="middle" font-size="11" font-weight="700" fill="#6D28D9">Shared Data (buffer, count, …)</text>
+  <text x="340" y="60" text-anchor="middle" font-size="8.5" fill="#4A4A4A">protected — only reachable via monitor procedures</text>
+
+  <!-- Procedures -->
+  <rect x="180" y="80" width="120" height="50" rx="5" fill="#C4B5FD" stroke="#6D28D9"/>
+  <text x="240" y="99" text-anchor="middle" font-weight="600" fill="#6D28D9" font-size="10">insert()</text>
+  <text x="240" y="114" text-anchor="middle" fill="#4A4A4A" font-size="9">producer procedure</text>
+  <text x="240" y="126" text-anchor="middle" fill="#4A4A4A" font-size="9">auto-locked</text>
+
+  <rect x="380" y="80" width="120" height="50" rx="5" fill="#C4B5FD" stroke="#6D28D9"/>
+  <text x="440" y="99" text-anchor="middle" font-weight="600" fill="#6D28D9" font-size="10">remove()</text>
+  <text x="440" y="114" text-anchor="middle" fill="#4A4A4A" font-size="9">consumer procedure</text>
+  <text x="440" y="126" text-anchor="middle" fill="#4A4A4A" font-size="9">auto-locked</text>
+
+  <!-- Condition variables -->
+  <rect x="200" y="148" width="130" height="56" rx="5" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1.2"/>
+  <text x="265" y="166" text-anchor="middle" font-weight="600" fill="#6D28D9">notFull</text>
+  <text x="265" y="180" text-anchor="middle" fill="#6B6660" font-size="8.5">producer waits here</text>
+  <text x="265" y="194" text-anchor="middle" fill="#6B6660" font-size="8.5">when buf is full</text>
+
+  <rect x="350" y="148" width="130" height="56" rx="5" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1.2"/>
+  <text x="415" y="166" text-anchor="middle" font-weight="600" fill="#6D28D9">notEmpty</text>
+  <text x="415" y="180" text-anchor="middle" fill="#6B6660" font-size="8.5">consumer waits here</text>
+  <text x="415" y="194" text-anchor="middle" fill="#6B6660" font-size="8.5">when buf is empty</text>
+
+  <!-- External callers -->
+  <rect x="14" y="80" width="90" height="36" rx="5" fill="#E3F5F2" stroke="#0A7B6C"/>
+  <text x="59" y="100" text-anchor="middle" font-weight="700" fill="#0A7B6C" font-size="11">Producer</text>
+  <line x1="104" y1="98" x2="180" y2="98" stroke="#6D28D9" stroke-width="1.4" marker-end="url(#ma)"/>
+  <text x="140" y="90" text-anchor="middle" fill="#6D28D9" font-size="8.5">calls insert()</text>
+
+  <rect x="576" y="80" width="90" height="36" rx="5" fill="#FFF0F2" stroke="#C0273A"/>
+  <text x="621" y="100" text-anchor="middle" font-weight="700" fill="#C0273A" font-size="11">Consumer</text>
+  <line x1="576" y1="98" x2="500" y2="98" stroke="#6D28D9" stroke-width="1.4" marker-end="url(#ma)"/>
+  <text x="540" y="90" text-anchor="middle" fill="#6D28D9" font-size="8.5">calls remove()</text>
+</svg>
+<div class="diagram-caption">Figure 5 — Monitor structure: shared data + procedures + condition variables, all in one unit</div>
+</div>
+
+<h3 id="mon-condvar">Condition Variables</h3>
+<p>A condition variable (CV) has two operations:</p>
+<div class="card purple-card">
+  <div class="tbl-wrap">
+  <table>
+  <thead><tr><th>Operation</th><th>Effect</th><th>POSIX</th><th>C++ STL</th></tr></thead>
+  <tbody>
+  <tr><td><strong>wait(cv, mutex)</strong></td><td>Atomically release mutex + block on cv. Re-acquires mutex when woken.</td><td><code>pthread_cond_wait</code></td><td><code>cv.wait(lock)</code></td></tr>
+  <tr><td><strong>signal(cv)</strong></td><td>Wake one thread waiting on cv (no-op if none waiting).</td><td><code>pthread_cond_signal</code></td><td><code>cv.notify_one()</code></td></tr>
+  <tr><td><strong>broadcast(cv)</strong></td><td>Wake all threads waiting on cv.</td><td><code>pthread_cond_broadcast</code></td><td><code>cv.notify_all()</code></td></tr>
+  </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card warn-card">
+  <div class="card-label">⚠ Always check condition in a LOOP</div>
+  <p style="font-size:.84rem;margin:0;">Spurious wakeups can occur (the OS may wake a thread without a signal). Always test the condition after being woken:</p>
+  <pre style="margin-top:8px;"><code>while (buffer_full())          /* NOT if() */
+    pthread_cond_wait(&notFull, &mutex);</code></pre>
+</div>
+
+<h3 id="mon-freertos">Monitor in FreeRTOS</h3>
+<p>FreeRTOS does not have a monitor primitive, but you build one with a <strong>mutex + Task Notifications or EventBits</strong>. The mutex provides the automatic lock; task notification or a binary semaphore acts as the condition variable signal.</p>
+
+<div class="diagram-wrap">
+<svg viewBox="0 0 640 160" xmlns="http://www.w3.org/2000/svg" font-family="Inter,sans-serif" font-size="10">
+  <!-- mapping table -->
+  <rect x="20" y="20" width="600" height="120" rx="8" fill="#EDE9FE" stroke="#6D28D9" stroke-width="1.5"/>
+  <text x="320" y="14" text-anchor="middle" font-size="11" font-weight="700" fill="#6D28D9">Monitor Concept → FreeRTOS Mapping</text>
+
+  <!-- headers -->
+  <text x="110" y="42" text-anchor="middle" font-weight="700" fill="#6D28D9">Monitor concept</text>
+  <text x="370" y="42" text-anchor="middle" font-weight="700" fill="#6D28D9">FreeRTOS equivalent</text>
+  <line x1="240" y1="20" x2="240" y2="140" stroke="#6D28D9" stroke-width="0.8" stroke-dasharray="3,2"/>
+  <line x1="20"  y1="50" x2="620" y2="50" stroke="#6D28D9" stroke-width="0.8"/>
+
+  <!-- rows -->
+  <text x="110" y="68" text-anchor="middle" fill="#4A4A4A">Monitor lock</text>
+  <text x="370" y="68" text-anchor="middle" fill="#4A4A4A"><tspan font-family="JetBrains Mono,monospace" font-size="9">xSemaphoreCreateMutex()</tspan></text>
+
+  <line x1="20" y1="76" x2="620" y2="76" stroke="#6D28D9" stroke-width="0.5" opacity="0.4"/>
+  <text x="110" y="92" text-anchor="middle" fill="#4A4A4A">Condition variable wait</text>
+  <text x="370" y="92" text-anchor="middle" fill="#4A4A4A"><tspan font-family="JetBrains Mono,monospace" font-size="9">ulTaskNotifyTake() / xSemaphoreTake(binSem)</tspan></text>
+
+  <line x1="20" y1="100" x2="620" y2="100" stroke="#6D28D9" stroke-width="0.5" opacity="0.4"/>
+  <text x="110" y="116" text-anchor="middle" fill="#4A4A4A">signal() / notify_one()</text>
+  <text x="370" y="116" text-anchor="middle" fill="#4A4A4A"><tspan font-family="JetBrains Mono,monospace" font-size="9">xTaskNotifyGive() / xSemaphoreGive(binSem)</tspan></text>
+
+  <line x1="20" y1="124" x2="620" y2="124" stroke="#6D28D9" stroke-width="0.5" opacity="0.4"/>
+  <text x="110" y="140" text-anchor="middle" fill="#4A4A4A">broadcast() / notify_all()</text>
+  <text x="370" y="140" text-anchor="middle" fill="#4A4A4A"><tspan font-family="JetBrains Mono,monospace" font-size="9">xEventGroupSetBits()  (all waiters unblock)</tspan></text>
+</svg>
+<div class="diagram-caption">Figure 6 — FreeRTOS equivalents for the monitor's built-in primitives</div>
+</div>
+
+<h3 id="mon-bb">Monitor-Style Bounded Buffer in C (POSIX)</h3>
+<pre><code>/* monitor_bb.c — bounded buffer as a monitor (POSIX pthreads) */
+#define N 8
+static int buf[N], head = 0, tail = 0, count = 0;
+static pthread_mutex_t mon  = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t  notFull  = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t  notEmpty = PTHREAD_COND_INITIALIZER;
+
+/* ── insert() — monitor entry procedure ── */
+void monitor_insert(int item) {
+    pthread_mutex_lock(&mon);           /* enter monitor — auto-lock */
+
+    while (count == N)                  /* wait on condition, loop! */
+        pthread_cond_wait(&notFull, &mon);
+
+    buf[head] = item;
+    head = (head + 1) % N;
+    count++;
+
+    pthread_cond_signal(&notEmpty);     /* signal consumer */
+    pthread_mutex_unlock(&mon);         /* exit monitor — auto-unlock */
+}
+
+/* ── remove() — monitor entry procedure ── */
+int monitor_remove(void) {
+    pthread_mutex_lock(&mon);
+
+    while (count == 0)
+        pthread_cond_wait(&notEmpty, &mon);
+
+    int item = buf[tail];
+    tail = (tail + 1) % N;
+    count--;
+
+    pthread_cond_signal(&notFull);      /* signal producer */
+    pthread_mutex_unlock(&mon);
+    return item;
+}</code></pre>
+
+<div class="card ok-card">
+  <div class="card-label">Why monitors are better than raw semaphores</div>
+  <ul style="font-size:.84rem;padding-left:18px;margin:0;">
+    <li>The lock is <strong>implicit</strong> — a programmer cannot accidentally read shared data outside the monitor.</li>
+    <li><code>wait(cv)</code> <strong>atomically</strong> releases the lock and suspends — no window for a missed signal between "unlock" and "block".</li>
+    <li>Condition variables express the <em>reason</em> for waiting (<code>notFull</code>, <code>notEmpty</code>) rather than embedding it in semaphore count arithmetic.</li>
+    <li>Code is easier to audit: every shared-data access is inside a named procedure.</li>
+  </ul>
+</div>
+
+<!-- Summary comparison -->
+<h3>Side-by-Side Summary</h3>
+<div class="tbl-wrap">
+<table>
+<thead>
+<tr>
+  <th>Problem</th>
+  <th>Semaphores used</th>
+  <th>Key invariant</th>
+  <th>Classic pitfall</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>Bounded Buffer</strong></td>
+  <td><code>empty</code>, <code>full</code>, <code>mutex</code></td>
+  <td>Take empty/full <em>before</em> mutex</td>
+  <td>Deadlock if mutex taken first</td>
+</tr>
+<tr>
+  <td><strong>Readers–Writers</strong></td>
+  <td><code>rc_mutex</code>, <code>rw_mutex</code></td>
+  <td>First/last reader gates <code>rw_mutex</code></td>
+  <td>Writer starvation (R1) or reader starvation (R2)</td>
+</tr>
+<tr>
+  <td><strong>Dining Philosophers</strong></td>
+  <td>One mutex per fork</td>
+  <td>Asymmetric pick-up for one philosopher</td>
+  <td>Circular wait if all pick left fork first</td>
+</tr>
+<tr>
+  <td><strong>Sleeping Barber</strong></td>
+  <td><code>customers</code>, <code>barber</code>, <code>mutex</code></td>
+  <td>Overflow path (leave if full) inside mutex</td>
+  <td>Race on <code>waiting</code> count outside mutex</td>
+</tr>
+<tr>
+  <td><strong>Monitor</strong></td>
+  <td>1 mutex + condition variables</td>
+  <td>Always <code>while()</code> not <code>if()</code> on CV wait</td>
+  <td>Spurious wakeup or missed signal</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+</section>
+</main>
+</div>
+
+<script>
+const links = document.querySelectorAll('.toc-link');
+const ids = [...document.querySelectorAll('[id]')];
+function onScroll() {
+  const y = window.scrollY + 70;
+  let cur = null;
+  for (const el of ids) { if (el.offsetTop <= y) cur = el.id; }
+  links.forEach(a => { const h = a.getAttribute('href').slice(1); a.classList.toggle('active', h === cur); });
+}
+window.addEventListener('scroll', onScroll, {passive:true});
+onScroll();
+</script>
