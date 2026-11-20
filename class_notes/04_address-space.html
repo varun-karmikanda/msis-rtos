@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>three-thread-blink: the address space at runtime</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --panel:   #F3F4F0;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  article{ max-width:1080px; margin:0 auto; padding:60px 24px 110px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:32px; font-weight:700; line-height:1.24; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17.5px; color:var(--ink-soft); max-width:70ch; margin:0 0 8px; }
+  p{ max-width:74ch; margin:0 0 16px; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+
+  h2{ font-size:22px; font-weight:700; margin:56px 0 6px; letter-spacing:-.01em; }
+  hr.div{ border:none; border-top:1px solid var(--rule); margin:52px 0; }
+
+  figure{ margin:22px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-top:10px; max-width:76ch; }
+
+  .legend{ display:flex; flex-wrap:wrap; margin:16px 0 28px; font-family:var(--mono); font-size:12px; color:var(--ink-soft); }
+  .legend span{ display:inline-flex; align-items:center; margin-right:24px; margin-bottom:6px; }
+  .legend i{ width:11px; height:11px; border-radius:3px; display:inline-block; margin-right:8px; }
+
+  .aside{ border-left:2px solid #EAF1F8; padding-left:16px; margin:20px 0; font-size:15.5px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+
+  table{ width:100%; border-collapse:collapse; margin:14px 0 24px; font-size:14px; }
+  th,td{ text-align:left; padding:8px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); border-bottom:1.5px solid var(--ink); }
+  td.addr{ font-family:var(--mono); font-size:12.5px; white-space:nowrap; }
+
+  .footline{ margin-top:60px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+</style>
+</head>
+<body>
+<article>
+
+  <p class="byline">stm32f103 workspace notes</p>
+  <h1>three-thread-blink: the address space at runtime</h1>
+  <p class="dek">Everything the chip is doing while three LEDs blink, laid out by address - from the vector table at the bottom of flash to the three task stacks tucked inside a 4&#8202;KB heap arena in RAM.</p>
+
+  <div class="legend">
+    <span><i style="background:#35618C"></i>flash - code &amp; constants, never changes at runtime</span>
+    <span><i style="background:#2E7D5B"></i>RAM - everything that changes while running</span>
+    <span><i style="background:#A05A2C"></i>peripheral registers</span>
+    <span><i style="background:#6E5A96"></i>core (ARM-defined, not ST) registers</span>
+  </div>
+
+  <h2>The whole space, at a glance</h2>
+  <p>A Cortex-M3 has one flat 4&#8202;GB address space - no MMU, no separate views per task. Everything this project touches falls into four narrow bands of it; the rest is simply never addressed.</p>
+
+  <figure>
+    <svg viewBox="0 0 1040 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ov-t">
+      <title id="ov-t">The four address bands used by three-thread-blink, across the full 4GB space</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+        <line x1="20" y1="70" x2="1020" y2="70" stroke="#D8DAD3" stroke-width="2"/>
+        <text x="20" y="52" font-size="10.5" fill="#9198A0">0x0000_0000</text>
+        <text x="1000" y="52" font-size="10.5" fill="#9198A0" text-anchor="end">0xFFFF_FFFF</text>
+
+        <line x1="130" y1="62" x2="130" y2="78" stroke="#35618C" stroke-width="2"/>
+        <rect x="40" y="90" width="180" height="46" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/>
+        <text x="130" y="108" text-anchor="middle" font-weight="700">0x0800_0000</text>
+        <text x="130" y="124" text-anchor="middle" font-size="10">FLASH - code region</text>
+
+        <line x1="330" y1="62" x2="330" y2="78" stroke="#2E7D5B" stroke-width="2"/>
+        <rect x="270" y="90" width="180" height="46" rx="6" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+        <text x="360" y="108" text-anchor="middle" font-weight="700">0x2000_0000</text>
+        <text x="360" y="124" text-anchor="middle" font-size="10">SRAM</text>
+
+        <line x1="600" y1="62" x2="600" y2="78" stroke="#A05A2C" stroke-width="2"/>
+        <rect x="510" y="90" width="180" height="46" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="600" y="108" text-anchor="middle" font-weight="700">0x4000_0000</text>
+        <text x="600" y="124" text-anchor="middle" font-size="10">Peripherals (RCC, GPIO)</text>
+
+        <line x1="900" y1="62" x2="900" y2="78" stroke="#6E5A96" stroke-width="2"/>
+        <rect x="810" y="90" width="180" height="46" rx="6" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.4"/>
+        <text x="900" y="108" text-anchor="middle" font-weight="700">0xE000_0000</text>
+        <text x="900" y="124" text-anchor="middle" font-size="10">Private Periph. Bus</text>
+
+        <text x="130" y="156" text-anchor="middle" font-size="9.5" fill="#5B6167">our code lives here</text>
+        <text x="360" y="156" text-anchor="middle" font-size="9.5" fill="#5B6167">TCBs, stacks, heap</text>
+        <text x="600" y="156" text-anchor="middle" font-size="9.5" fill="#5B6167">GPIO/RCC registers</text>
+        <text x="900" y="156" text-anchor="middle" font-size="9.5" fill="#5B6167">SysTick, NVIC, VTOR</text>
+
+        <text x="520" y="196" text-anchor="middle" font-size="10.5" fill="#9198A0">not to scale - most of this 4 GB is simply unmapped on an STM32F103</text>
+      </g>
+    </svg>
+    <figcaption>The three sections below zoom into these bands, in the order the CPU actually touches them: flash first, then RAM, then the register banks.</figcaption>
+  </figure>
+
+  <hr class="div">
+
+  <h2>Flash - 0x0800_0000 to 0x0800_FFFF (64&#8202;KB)</h2>
+  <p>Everything here was true before power was ever applied, and stays true for the life of the program - it's the ELF's <code>.isr_vector</code>, <code>.text</code>, and <code>.rodata</code>, written once at flash time.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="flash-t">
+      <title id="flash-t">Layout of flash memory: vector table, startup code, application and FreeRTOS code, constants</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="24" font-weight="700">0x0800_FFFF</text>
+        <text x="10" y="386" font-weight="700">0x0800_0000</text>
+        <line x1="130" y1="30" x2="130" y2="380" stroke="#D8DAD3" stroke-width="1.5"/>
+
+        <rect x="150" y="330" width="830" height="50" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.6"/>
+        <text x="170" y="352" font-weight="700">.isr_vector</text>
+        <text x="170" y="368" font-size="10" fill="#35618C">g_pfnVectorTable - Reset/NMI/HardFault/.../SVC/PendSV/SysTick/IRQ0-42</text>
+
+        <rect x="150" y="270" width="830" height="50" rx="6" fill="#fff" stroke="#9198A0" stroke-width="1.3"/>
+        <text x="170" y="292" font-weight="700">Reset_Handler, Default_Handler</text>
+        <text x="170" y="308" font-size="10" fill="#5B6167">startup_stm32f103.s - copies .data, zeroes .bss, calls main()</text>
+
+        <rect x="150" y="210" width="400" height="50" rx="6" fill="#fff" stroke="#9198A0" stroke-width="1.3"/>
+        <text x="170" y="232" font-weight="700">main.c</text>
+        <text x="170" y="248" font-size="10" fill="#5B6167">gpio_output_init, led_task, main</text>
+
+        <rect x="570" y="210" width="410" height="50" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.3"/>
+        <text x="590" y="232" font-weight="700">FreeRTOS object code</text>
+        <text x="590" y="248" font-size="10" fill="#A05A2C">tasks.o list.o queue.o port.o heap_4.o</text>
+
+        <rect x="150" y="150" width="830" height="50" rx="6" fill="#F3F4F0" stroke="#D8DAD3" stroke-width="1.3"/>
+        <text x="170" y="172" font-weight="700">.rodata</text>
+        <text x="170" y="188" font-size="10" fill="#5B6167">led_a / led_b / led_c (static const structs) - "led_1s"/"led_2s"/"led_3s" name strings</text>
+
+        <text x="170" y="130" font-size="10.5" fill="#9198A0">62&#8202;KB or so of unused flash above this - plenty of headroom</text>
+
+        <path d="M130,355 H150" stroke="#35618C" stroke-width="1.5"/>
+      </g>
+    </svg>
+    <figcaption>led_a/led_b/led_c are declared <code>static const</code> - the compiler places them in .rodata, in flash, right alongside the code. They're never copied to RAM at all.</figcaption>
+  </figure>
+
+  <hr class="div">
+
+  <h2>RAM - 0x2000_0000 to 0x2000_4FFF (20&#8202;KB)</h2>
+  <p>Everything here is only true <em>right now</em>. This is where the three tasks, their stacks, and the scheduler's own bookkeeping actually live while the program runs.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 560" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ram-t">
+      <title id="ram-t">Layout of RAM: kernel globals, the heap_4 arena holding three TCBs and stacks, and the top-of-RAM system stack</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="24" font-weight="700">0x2000_4FFF</text>
+        <text x="10" y="546" font-weight="700">0x2000_0000</text>
+        <line x1="130" y1="30" x2="130" y2="540" stroke="#D8DAD3" stroke-width="1.5"/>
+
+        <rect x="150" y="30" width="830" height="46" rx="6" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.4"/>
+        <text x="170" y="50" font-weight="700">_estack  =  MSP  (Main Stack Pointer)</text>
+        <text x="170" y="66" font-size="10" fill="#6E5A96">the ONE stack used in Handler mode - inside SysTick_Handler, PendSV_Handler, any ISR</text>
+
+        <rect x="150" y="90" width="830" height="60" rx="6" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+        <text x="170" y="112" font-weight="700">FreeRTOS kernel globals (.data / .bss, tasks.c)</text>
+        <text x="170" y="128" font-size="10" fill="#2E7D5B">pxCurrentTCB &#8226; pxReadyTasksLists[5] &#8226; pxDelayedTaskList &#8226; xTickCount</text>
+        <text x="170" y="142" font-size="9.5" fill="#5B6167">a few dozen bytes - this is the scheduler's entire "state" outside the heap below</text>
+
+        <rect x="150" y="170" width="830" height="330" rx="8" fill="none" stroke="#2E7D5B" stroke-width="1.6" stroke-dasharray="5,4"/>
+        <text x="170" y="192" font-weight="700">heap_4 arena - static uint8_t ucHeap[4096]</text>
+        <text x="170" y="207" font-size="10" fill="#2E7D5B">configTOTAL_HEAP_SIZE - every TCB and every task stack is carved from this one array</text>
+
+        <rect x="170" y="222" width="790" height="76" rx="6" fill="#fff" stroke="#9198A0" stroke-width="1.2"/>
+        <rect x="184" y="234" width="150" height="50" rx="5" fill="#E8F3ED" stroke="#2E7D5B"/>
+        <text x="259" y="254" text-anchor="middle" font-size="10.5" font-weight="700">TCB: led_1s</text>
+        <text x="259" y="270" text-anchor="middle" font-size="9">PSP when running</text>
+        <rect x="350" y="234" width="590" height="50" rx="5" fill="#fff" stroke="#2E7D5B" stroke-dasharray="3,3"/>
+        <text x="645" y="254" text-anchor="middle" font-size="10.5" font-weight="700">led_1s stack - 90 words (360 B)</text>
+        <text x="645" y="270" text-anchor="middle" font-size="9" fill="#5B6167">saved r4-r11 + hw frame when NOT running</text>
+
+        <rect x="170" y="306" width="790" height="76" rx="6" fill="#fff" stroke="#9198A0" stroke-width="1.2"/>
+        <rect x="184" y="318" width="150" height="50" rx="5" fill="#EAF1F8" stroke="#35618C"/>
+        <text x="259" y="338" text-anchor="middle" font-size="10.5" font-weight="700">TCB: led_2s</text>
+        <text x="259" y="354" text-anchor="middle" font-size="9">Ready or Blocked</text>
+        <rect x="350" y="318" width="590" height="50" rx="5" fill="#fff" stroke="#35618C" stroke-dasharray="3,3"/>
+        <text x="645" y="338" text-anchor="middle" font-size="10.5" font-weight="700">led_2s stack - 90 words (360 B)</text>
+        <text x="645" y="354" text-anchor="middle" font-size="9" fill="#5B6167">2 s period</text>
+
+        <rect x="170" y="390" width="790" height="76" rx="6" fill="#fff" stroke="#9198A0" stroke-width="1.2"/>
+        <rect x="184" y="402" width="150" height="50" rx="5" fill="#FAF0E6" stroke="#A05A2C"/>
+        <text x="259" y="422" text-anchor="middle" font-size="10.5" font-weight="700">TCB: led_3s</text>
+        <text x="259" y="438" text-anchor="middle" font-size="9">Ready or Blocked</text>
+        <rect x="350" y="402" width="590" height="50" rx="5" fill="#fff" stroke="#A05A2C" stroke-dasharray="3,3"/>
+        <text x="645" y="422" text-anchor="middle" font-size="10.5" font-weight="700">led_3s stack - 90 words (360 B)</text>
+        <text x="645" y="438" text-anchor="middle" font-size="9" fill="#5B6167">3 s period</text>
+
+        <text x="170" y="484" font-size="10.5" fill="#5B6167">~2.7&#8202;KB of the 4&#8202;KB arena still free - idle-task TCB/stack also comes from here</text>
+
+        <rect x="150" y="508" width="830" height="20" rx="4" fill="#F3F4F0" stroke="#D8DAD3"/>
+        <text x="170" y="522" font-size="10" fill="#9198A0">rest of the 20&#8202;KB - never touched by this program</text>
+      </g>
+    </svg>
+    <figcaption>Only the top-of-RAM stack (MSP) is fixed at a location the linker chose. Every TCB and task stack address below it is decided at runtime, the moment each <code>xTaskCreate()</code> call actually executes.</figcaption>
+  </figure>
+
+  <p class="aside"><b>Two stacks, two purposes.</b> <code>_estack</code> at the very top of RAM is the <em>Main</em> Stack Pointer - it's what <code>SysTick_Handler</code> and <code>PendSV_Handler</code> run on, in Handler mode, no matter which task was interrupted. Each task's own stack, down in the heap arena, is addressed through the <em>Process</em> Stack Pointer instead - swapped by <code>PendSV_Handler</code> at every context switch. The two never collide because the CPU is always in exactly one mode at a time.</p>
+
+  <hr class="div">
+
+  <h2>Peripheral &amp; core registers</h2>
+  <p>The only addresses in this whole program that aren't memory in the usual sense - reads and writes here reach real silicon (clock gates, pin drivers, a hardware countdown timer), not storage.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="periph-t">
+      <title id="periph-t">GPIO, RCC, and SysTick registers this project touches, by address</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="24" font-weight="700" font-size="13" fill="#A05A2C">0x4000_0000 region - peripherals</text>
+
+        <rect x="10" y="36" width="300" height="60" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="24" y="56" font-weight="700">RCC  @ 0x4002_1000</text>
+        <text x="24" y="72" font-size="10" fill="#A05A2C">-&gt;APB2ENR |= IOPAEN | IOPCEN</text>
+        <text x="24" y="86" font-size="9.5" fill="#5B6167">powers up GPIOA and GPIOC</text>
+
+        <rect x="330" y="36" width="300" height="60" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="344" y="56" font-weight="700">GPIOA  @ 0x4001_0800</text>
+        <text x="344" y="72" font-size="10" fill="#A05A2C">-&gt;CRL, -&gt;ODR</text>
+        <text x="344" y="86" font-size="9.5" fill="#5B6167">pins 0 &amp; 1 - led_2s, led_3s</text>
+
+        <rect x="650" y="36" width="300" height="60" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="664" y="56" font-weight="700">GPIOC  @ 0x4001_1000</text>
+        <text x="664" y="72" font-size="10" fill="#A05A2C">-&gt;CRH, -&gt;ODR</text>
+        <text x="664" y="86" font-size="9.5" fill="#5B6167">pin 13 - led_1s, onboard LED</text>
+
+        <text x="10" y="140" font-weight="700" font-size="13" fill="#6E5A96">0xE000_0000 region - Private Peripheral Bus (ARM core, not ST)</text>
+
+        <rect x="10" y="152" width="300" height="60" rx="6" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.4"/>
+        <text x="24" y="172" font-weight="700">SysTick  @ 0xE000_E010</text>
+        <text x="24" y="188" font-size="10" fill="#6E5A96">-&gt;CTRL, -&gt;LOAD, -&gt;VAL</text>
+        <text x="24" y="202" font-size="9.5" fill="#5B6167">FreeRTOS's 1&#8202;kHz tick source</text>
+
+        <rect x="330" y="152" width="300" height="60" rx="6" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.4"/>
+        <text x="344" y="172" font-weight="700">NVIC  @ 0xE000_E100</text>
+        <text x="344" y="188" font-size="10" fill="#6E5A96">priority registers</text>
+        <text x="344" y="202" font-size="9.5" fill="#5B6167">set up inside port.c, not our code</text>
+
+        <rect x="650" y="152" width="300" height="60" rx="6" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.4"/>
+        <text x="664" y="172" font-weight="700">SCB / VTOR  @ 0xE000_ED08</text>
+        <text x="664" y="188" font-size="10" fill="#6E5A96">vector table base</text>
+        <text x="664" y="202" font-size="9.5" fill="#5B6167">read once, in prvPortStartFirstTask</text>
+
+        <text x="10" y="250" font-size="11" fill="#9198A0">stm32f103_regs.h defines the top row; SysTick's address is the one constant every Cortex-M3</text>
+        <text x="10" y="266" font-size="11" fill="#9198A0">shares regardless of vendor - it's part of the ARMv7-M architecture, not the STM32 silicon.</text>
+      </g>
+    </svg>
+    <figcaption>Every one of these is a direct <code>volatile</code> struct pointer from <code>stm32f103_regs.h</code> - no HAL call, no abstraction layer between the C code and the register.</figcaption>
+  </figure>
+
+  <hr class="div">
+
+  <h2>All four, side by side</h2>
+  <table>
+    <thead><tr><th>Region</th><th>Address range</th><th>What's actually there</th><th>Changes at runtime?</th></tr></thead>
+    <tbody>
+      <tr><td>Flash</td><td class="addr">0x0800_0000 - 0x0800_FFFF</td><td>vectors, Reset_Handler, main.c, FreeRTOS code, .rodata</td><td>No</td></tr>
+      <tr><td>RAM</td><td class="addr">0x2000_0000 - 0x2000_4FFF</td><td>kernel globals, heap_4 arena (3&#215; TCB + stack), MSP</td><td>Constantly</td></tr>
+      <tr><td>Peripherals</td><td class="addr">0x4001_0800 - 0x4002_1000</td><td>RCC, GPIOA, GPIOC registers</td><td>On every write</td></tr>
+      <tr><td>Core (PPB)</td><td class="addr">0xE000_E010 - 0xE000_ED08</td><td>SysTick, NVIC, VTOR</td><td>Every 1&#8202;ms tick</td></tr>
+    </tbody>
+  </table>
+
+  <div class="footline">stm32f103 workspace notes &middot; addresses per stm32f103_regs.h, stm32f103.ld, and the ARMv7-M Architecture Reference Manual</div>
+
+</article>
+</body>
+</html>

@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Introduction to OS — Training Handout</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:        #F5F6F3;
+    --paper:     #FFFFFF;
+    --ink:       #1B1E21;
+    --ink-soft:  #52585E;
+    --ink-faint: #8B9198;
+    --rule:      #DCE1E0;
+    --rule-soft: #EAEDEB;
+    --user:      #2B5D8C;   /* EL0 / user mode accent */
+    --user-bg:   #EAF1F8;
+    --kernel:    #B5651D;   /* EL1 / kernel mode accent */
+    --kernel-bg: #FBF0E6;
+    --teal:      #1F5F5B;   /* section markers, timeline, links */
+    --teal-bg:   #E9F2F1;
+    --code-bg:   #EEF0EC;
+    --mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  @media (prefers-reduced-motion: reduce){ html{ scroll-behavior:auto; } }
+
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  a{ color:var(--teal); text-decoration-color:var(--rule); text-underline-offset:3px; }
+  a:hover{ text-decoration-color:var(--teal); }
+
+  code, .mono{ font-family:var(--mono); }
+
+  code:not(.blk code){
+    background:var(--code-bg);
+    padding:.1em .4em;
+    border-radius:3px;
+    font-size:.9em;
+  }
+
+  /* ---------- layout ---------- */
+  .layout{
+    max-width:1240px;
+    margin:0 auto;
+    display:grid;
+    grid-template-columns:250px minmax(0,1fr);
+    gap:0;
+  }
+
+  .toc{
+    position:sticky;
+    top:0;
+    align-self:start;
+    height:100vh;
+    overflow-y:auto;
+    padding:32px 20px 32px 28px;
+    border-right:1px solid var(--rule);
+  }
+  .toc-kicker{
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--ink-faint);
+    margin:0 0 14px;
+  }
+  .toc ol{ list-style:none; margin:0; padding:0; counter-reset:toc; }
+  .toc li{ counter-increment:toc; margin-bottom:2px; }
+  .toc a{
+    display:flex; gap:10px;
+    padding:7px 8px;
+    border-radius:6px;
+    color:var(--ink-soft);
+    font-size:13.5px;
+    text-decoration:none;
+    line-height:1.35;
+  }
+  .toc a:hover{ background:var(--teal-bg); color:var(--teal); }
+  .toc a::before{
+    content: counter(toc, decimal-leading-zero);
+    font-family:var(--mono);
+    font-size:11px;
+    color:var(--ink-faint);
+    padding-top:1px;
+  }
+  .toc .sub{ padding-left:22px; }
+  .toc .sub a::before{ content:"–"; }
+
+  main{ padding:56px 56px 96px; min-width:0; }
+
+  .cover{ margin-bottom:64px; }
+  .cover .kicker{
+    font-family:var(--mono);
+    font-size:12px;
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    color:var(--teal);
+    margin:0 0 14px;
+  }
+  .cover h1{
+    font-family:var(--mono);
+    font-weight:600;
+    font-size:clamp(32px,4vw,46px);
+    line-height:1.12;
+    margin:0 0 18px;
+    letter-spacing:-.01em;
+  }
+  .cover p.lede{
+    max-width:60ch;
+    color:var(--ink-soft);
+    font-size:17px;
+    margin:0;
+  }
+  .cover .meta{
+    display:flex; gap:24px; flex-wrap:wrap;
+    margin-top:28px;
+    padding-top:20px;
+    border-top:1px solid var(--rule);
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--ink-faint);
+  }
+  .cover .meta strong{ color:var(--ink-soft); font-weight:600; }
+
+  section.topic{
+    padding-top:52px;
+    margin-top:0;
+    border-top:1px solid var(--rule-soft);
+    scroll-margin-top:24px;
+  }
+  section.topic:first-of-type{ border-top:none; }
+
+  .topic-head{ display:flex; align-items:baseline; gap:16px; margin-bottom:22px; }
+  .topic-num{
+    font-family:var(--mono);
+    font-size:14px;
+    color:var(--teal);
+    background:var(--teal-bg);
+    border-radius:5px;
+    padding:3px 9px;
+    flex:none;
+  }
+  .topic-head h2{
+    font-family:var(--mono);
+    font-size:24px;
+    font-weight:600;
+    margin:0;
+    letter-spacing:-.01em;
+  }
+
+  h3{
+    font-family:var(--mono);
+    font-size:16px;
+    font-weight:600;
+    margin:32px 0 12px;
+    color:var(--ink);
+  }
+  h4{
+    font-family:var(--sans);
+    font-size:14.5px;
+    font-weight:600;
+    margin:20px 0 8px;
+  }
+  p{ margin:0 0 14px; max-width:74ch; }
+  ul, ol{ margin:0 0 16px; padding-left:22px; max-width:72ch; }
+  li{ margin-bottom:6px; }
+
+  .callout{
+    border-left:3px solid var(--teal);
+    background:var(--teal-bg);
+    padding:14px 18px;
+    border-radius:0 8px 8px 0;
+    margin:18px 0;
+    font-size:14.5px;
+  }
+  .callout p:last-child{ margin-bottom:0; }
+  .callout .label{
+    font-family:var(--mono);
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    color:var(--teal);
+    display:block;
+    margin-bottom:6px;
+  }
+
+  .mode-box{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin:20px 0; }
+  @media (max-width:720px){ .mode-box{ grid-template-columns:1fr; } }
+  .mode-box .box{ border-radius:8px; padding:16px 18px; font-size:14.5px; }
+  .mode-box .box.user{ background:var(--user-bg); border:1px solid #CFE0EE; }
+  .mode-box .box.kernel{ background:var(--kernel-bg); border:1px solid #EAD3B7; }
+  .mode-box .tag{
+    font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    display:inline-block; padding:2px 8px; border-radius:4px; margin-bottom:10px;
+  }
+  .mode-box .box.user .tag{ background:var(--user); color:#fff; }
+  .mode-box .box.kernel .tag{ background:var(--kernel); color:#fff; }
+  .mode-box ul{ margin:0; padding-left:18px; }
+
+  table{ width:100%; border-collapse:collapse; margin:18px 0 24px; font-size:14.5px; }
+  th, td{ text-align:left; padding:10px 14px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{
+    font-family:var(--mono); font-size:11.5px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--ink-faint); border-bottom:1.5px solid var(--ink);
+  }
+  tbody tr:last-child td{ border-bottom:1px solid var(--ink-faint); }
+  td.hw{ font-family:var(--mono); font-size:13.5px; color:var(--teal); white-space:nowrap; }
+
+  .blk{
+    background:var(--code-bg);
+    border:1px solid var(--rule);
+    border-radius:8px;
+    padding:14px 18px;
+    margin:16px 0;
+    overflow-x:auto;
+  }
+  .blk code{
+    display:block; white-space:pre; font-size:13px; line-height:1.65; color:var(--ink);
+  }
+  .blk .c1{ color:var(--ink-faint); }
+  .blk .kw{ color:var(--kernel); }
+  .blk .u{ color:var(--user); }
+
+  .steps{ counter-reset:step; list-style:none; padding-left:0; margin:18px 0; }
+  .steps li{
+    counter-increment:step;
+    position:relative;
+    padding-left:38px;
+    margin-bottom:14px;
+  }
+  .steps li::before{
+    content: counter(step);
+    position:absolute; left:0; top:0;
+    width:24px; height:24px;
+    border-radius:50%;
+    background:var(--ink);
+    color:var(--bg);
+    font-family:var(--mono); font-size:12px; font-weight:600;
+    display:flex; align-items:center; justify-content:center;
+  }
+
+  /* timeline (section 4) */
+  .timeline{ display:flex; gap:0; margin:26px 0 32px; overflow-x:auto; }
+  .timeline .era{
+    flex:1 0 190px;
+    border-top:3px solid var(--teal);
+    padding:14px 16px 0 0;
+    position:relative;
+  }
+  .timeline .era::before{
+    content:""; position:absolute; top:-6px; left:0;
+    width:9px; height:9px; border-radius:50%; background:var(--teal);
+  }
+  .timeline .era .yr{ font-family:var(--mono); font-size:12px; color:var(--teal); font-weight:600; }
+  .timeline .era .ti{ font-weight:600; font-size:13.5px; margin:4px 0 4px; }
+  .timeline .era .tx{ font-size:12.5px; color:var(--ink-soft); }
+
+  figure{ margin:20px 0 28px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-faint);
+    margin-top:8px; text-align:center;
+  }
+
+  .taglist{ display:flex; flex-wrap:wrap; gap:8px; margin:12px 0 20px; }
+  .taglist span{
+    font-family:var(--mono); font-size:11.5px;
+    background:var(--code-bg); border:1px solid var(--rule);
+    padding:4px 10px; border-radius:20px; color:var(--ink-soft);
+  }
+
+  footer{
+    margin-top:64px; padding-top:24px; border-top:1px solid var(--rule);
+    font-family:var(--mono); font-size:11.5px; color:var(--ink-faint);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
+  }
+
+  @media (max-width:900px){
+    .layout{ grid-template-columns:1fr; }
+    .toc{ position:relative; height:auto; border-right:none; border-bottom:1px solid var(--rule); }
+    main{ padding:36px 22px 72px; }
+  }
+
+  @media print{
+    .toc{ display:none; }
+    .layout{ grid-template-columns:1fr; }
+    body{ background:#fff; }
+    section.topic{ break-inside:avoid-page; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <nav class="toc" aria-label="Table of contents">
+    <p class="toc-kicker">On this page</p>
+    <ol>
+      <li><a href="#intro">Introduction to OS</a></li>
+      <li><a href="#baremetal-vs-os">Baremetal C vs OS</a></li>
+      <li><a href="#sp-mp">Single &amp; multiprocessor systems</a></li>
+      <li><a href="#types">Types of systems</a>
+        <ul class="toc" style="border:none;padding:4px 0 0;">
+          <li class="sub"><a href="#batch">Batch processing</a></li>
+          <li class="sub"><a href="#timesharing">Time&#8209;sharing</a></li>
+          <li class="sub"><a href="#multiprogramming">Multiprogramming</a></li>
+          <li class="sub"><a href="#interactive">Interactive systems</a></li>
+        </ul>
+      </li>
+      <li><a href="#modes">User &amp; kernel mode (ARMv8)</a></li>
+      <li><a href="#syscall">System call implementation</a></li>
+      <li><a href="#rtos">What makes an OS an RTOS</a></li>
+      <li><a href="#examples">Real-time embedded examples</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="cover">
+      <p class="kicker">Training Handout · Operating Systems</p>
+      <h1>Introduction to OS</h1>
+      <p class="lede">From baremetal loops to kernel-mode syscalls: how an operating system earns its keep between the hardware and everything running on top of it — and what has to be true for that OS to also be <em>real-time</em>.</p>
+      <div class="meta">
+        <span><strong>Level</strong> — embedded / systems</span>
+        <span><strong>Reference arch</strong> — ARMv8-A (AArch64)</span>
+        <span><strong>Reference kernel</strong> — Linux</span>
+      </div>
+    </div>
+
+    <!-- 1 ================================================== -->
+    <section class="topic" id="intro">
+      <div class="topic-head">
+        <span class="topic-num">§1</span>
+        <h2>Introduction to OS</h2>
+      </div>
+
+      <p>An operating system is the software layer that turns raw hardware — a CPU, some RAM, a handful of peripherals — into something applications can actually use without every program having to reinvent device drivers, memory management, and task switching from scratch.</p>
+
+      <p>Strip away the terminology and an OS is doing three jobs at once:</p>
+      <ul>
+        <li><strong>Resource manager</strong> — arbitrates CPU time, memory, and I/O devices between multiple competing programs.</li>
+        <li><strong>Abstraction layer</strong> — gives applications a stable, hardware-independent interface (files, sockets, processes) instead of forcing every program to speak directly to silicon.</li>
+        <li><strong>Protection boundary</strong> — keeps one program's bugs (or malice) from corrupting another program, or the kernel itself.</li>
+      </ul>
+
+      <p>Everything else in this handout — user/kernel mode, system calls, scheduling policy, real-time guarantees — is really just different angles on how an OS delivers those three jobs, and what it costs to do so.</p>
+    </section>
+
+    <!-- 2 ================================================== -->
+    <section class="topic" id="baremetal-vs-os">
+      <div class="topic-head">
+        <span class="topic-num">§2</span>
+        <h2>Baremetal C vs OS</h2>
+      </div>
+
+      <p>A baremetal program <em>is</em> the whole system — there's no kernel underneath it arbitrating anything. An OS-hosted program is one tenant among many, mediated by a kernel it can never fully see or touch directly. The practical differences fall out of that one distinction:</p>
+
+      <table>
+        <thead><tr><th>Aspect</th><th>Baremetal C</th><th>OS-hosted (Linux-like)</th></tr></thead>
+        <tbody>
+          <tr><td>Execution model</td><td><code>main()</code> super-loop plus interrupt handlers</td><td>Many processes/threads, time-multiplexed by a scheduler</td></tr>
+          <tr><td>Hardware access</td><td>Direct memory-mapped register writes</td><td>Only via system calls into kernel-mode drivers</td></tr>
+          <tr><td>Memory model</td><td>Flat address space; addresses = physical addresses</td><td>Virtual memory per process, enforced by the MMU</td></tr>
+          <tr><td>Determinism</td><td>Fully deterministic — you account for every cycle</td><td>Scheduling jitter; deterministic only if the OS is an RTOS</td></tr>
+          <tr><td>Startup</td><td>You supply the vector table, linker script, and reset handler</td><td>Bootloader loads a kernel, kernel starts an init process</td></tr>
+          <tr><td>Fault isolation</td><td>One bug can take down the entire system</td><td>A crashing process need not affect others</td></tr>
+          <tr><td>Footprint</td><td>Kilobytes</td><td>Megabytes (kernel + libc + userspace)</td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout">
+        <span class="label">Where this sits in your own workflow</span>
+        <p>Every libopencm3 + FreeRTOS project you build is baremetal C plus a cooperating scheduler bolted directly onto it — there's no MMU-enforced isolation, no syscalls, no separate address spaces. FreeRTOS gives you multitasking without paying for the rest of what "OS" usually implies. That's a deliberate trade, not a missing feature — it's what makes worst-case latency boundable at all (more on this in <a href="#rtos">§7</a>).</p>
+      </div>
+    </section>
+
+    <!-- 3 ================================================== -->
+    <section class="topic" id="sp-mp">
+      <div class="topic-head">
+        <span class="topic-num">§3</span>
+        <h2>Single processor and multiprocessor systems</h2>
+      </div>
+
+      <p><strong>Single-processor (uniprocessor)</strong> systems have exactly one core executing one instruction stream at a time. Any "concurrency" you observe — multiple FreeRTOS tasks appearing to run at once — is time-slicing: the illusion of parallelism, not the fact of it.</p>
+
+      <p><strong>Multiprocessor</strong> systems have two or more CPUs sharing memory, and split into two flavors:</p>
+      <ul>
+        <li><strong>SMP (symmetric multiprocessing)</strong> — every core is identical and runs the same OS image; the scheduler can place any task on any core. This is what "multicore" means on a modern application processor (e.g. a quad-core Cortex-A53 running one Linux kernel across all four cores).</li>
+        <li><strong>AMP (asymmetric multiprocessing)</strong> — cores are different, or run <em>different</em> software stacks entirely, each with its own role. A Xilinx Zynq-7000 is the textbook example: dual Cortex-A9 cores capable of running Linux, sitting on the same die as FPGA fabric — the "processing system" and "programmable logic" are asymmetric partners, not interchangeable peers.</li>
+      </ul>
+
+      <p>Worth noting for the RTOS side of this handout: vanilla FreeRTOS assumes a single scheduler instance managing one core (uniprocessor, even if the silicon has other cores doing something else entirely, AMP-style). FreeRTOS-SMP extends this to symmetric multicore microcontrollers, but the classic model — and everything in your STM32 build system — is single-core.</p>
+    </section>
+
+    <!-- 4 ================================================== -->
+    <section class="topic" id="types">
+      <div class="topic-head">
+        <span class="topic-num">§4</span>
+        <h2>Types of systems</h2>
+      </div>
+      <p>These four aren't competing designs so much as successive answers to the same question — "how do we keep an expensive CPU busy and give users a tolerable response time?" — asked again as hardware got cheaper and expectations rose.</p>
+
+      <div class="timeline">
+        <div class="era"><span class="yr">~1950s</span><div class="ti">Batch processing</div><div class="tx">IBM 1401/7094 era. Jobs queued on tape, run unattended, output printed later.</div></div>
+        <div class="era"><span class="yr">Early 1960s</span><div class="ti">Multiprogramming</div><div class="tx">OS/360 keeps several jobs resident so the CPU never idles waiting on I/O.</div></div>
+        <div class="era"><span class="yr">1961–1965</span><div class="ti">Time-sharing</div><div class="tx">MIT CTSS, then Multics — many terminals, one CPU, rapid switching.</div></div>
+        <div class="era"><span class="yr">1970s–80s</span><div class="ti">Interactive systems</div><div class="tx">UNIX shells, then GUIs (Xerox Alto, Macintosh) — immediate feedback becomes the default.</div></div>
+      </div>
+
+      <h3 id="batch">a. Essential features of batch processing</h3>
+      <ul>
+        <li>Jobs are collected ("batched") and run without any user interaction during execution.</li>
+        <li>A <strong>resident monitor</strong> automatically sequences one job after another — no operator intervention between jobs.</li>
+        <li><strong>Spooling</strong> moves job input/output between slow media (cards, tape) and faster disk buffering, decoupling I/O speed from CPU speed.</li>
+        <li>Optimized for <strong>throughput</strong>, not response time — turnaround was measured in hours, sometimes overnight.</li>
+        <li>Jobs carried their resource requirements in a <strong>job control language</strong> (JCL) read by the monitor.</li>
+      </ul>
+      <p class="taglist-label"></p>
+      <div class="taglist"><span>IBM 1401/7094</span><span>punch cards</span><span>magnetic tape</span><span>JCL</span></div>
+
+      <h3 id="timesharing">b. Time-sharing systems</h3>
+      <p>The CPU is sliced into short time quanta and rapidly rotated across multiple interactive terminal users, each of whom experiences the illusion of having the machine to themselves. This is the direct ancestor of every multi-user and multitasking system since.</p>
+      <ul>
+        <li>MIT's <strong>CTSS</strong> (1961) is generally credited as the first working time-sharing system.</li>
+        <li><strong>Multics</strong> (1965, MIT/Bell Labs/GE) took the idea further and directly influenced the design of <strong>UNIX</strong> a few years later.</li>
+        <li>Response time, not just throughput, becomes a first-class design goal.</li>
+      </ul>
+
+      <h3 id="multiprogramming">c. Multiprogramming</h3>
+      <p>The enabling idea underneath time-sharing: keep <em>several</em> jobs resident in memory at once, so when the currently-running job blocks on I/O, the CPU switches to a different job that's ready to run, instead of sitting idle. IBM's <strong>OS/360</strong> (mid-1960s, MFT/MVT variants) brought this to mainframe workloads. Multiprogramming maximizes CPU utilization; time-sharing adds the additional constraint that switching has to happen fast enough to feel responsive to a human at a terminal.</p>
+
+      <h3 id="interactive">d. Interactive systems</h3>
+      <p>A system is interactive when a user's input produces an (apparently) immediate response — command in, output back, in a tight feedback loop — rather than a job submitted and collected later. Interactivity rides on top of time-sharing and multiprogramming foundations: terminals replacing punch cards through the 1960s–70s made it possible, UNIX shells made it normal, and graphical desktops (Xerox Alto, then the Macintosh in the 1980s) made it the default expectation that persists today, down to the shell or debugger session you're using on your own STM32 workspace.</p>
+    </section>
+
+    <!-- 5 ================================================== -->
+    <section class="topic" id="modes">
+      <div class="topic-head">
+        <span class="topic-num">§5</span>
+        <h2>User mode and kernel mode — Linux on ARMv8</h2>
+      </div>
+
+      <p>ARMv8-A defines four <strong>Exception Levels</strong> (ELs) — a strict privilege hierarchy the hardware itself enforces, not just an OS convention:</p>
+
+      <figure>
+        <svg viewBox="0 0 760 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="eltitle">
+          <title id="eltitle">ARMv8-A exception levels, EL0 to EL3, mapped to Linux's use of them</title>
+          <!-- ladder bars -->
+          <g font-family="IBM Plex Mono, monospace">
+            <!-- EL0 -->
+            <rect x="40" y="180" width="680" height="50" rx="6" fill="#EAF1F8" stroke="#2B5D8C" stroke-width="1.2"/>
+            <text x="60" y="202" font-size="13" font-weight="600" fill="#2B5D8C">EL0</text>
+            <text x="60" y="220" font-size="12" fill="#3A4652">User applications — unprivileged</text>
+            <text x="560" y="211" font-size="11.5" fill="#2B5D8C">Linux: user-mode processes</text>
+
+            <!-- EL1 -->
+            <rect x="40" y="120" width="680" height="50" rx="6" fill="#FBF0E6" stroke="#B5651D" stroke-width="1.2"/>
+            <text x="60" y="142" font-size="13" font-weight="600" fill="#B5651D">EL1</text>
+            <text x="60" y="160" font-size="12" fill="#3A4652">Operating system kernel — privileged</text>
+            <text x="560" y="151" font-size="11.5" fill="#B5651D">Linux: kernel mode</text>
+
+            <!-- EL2 -->
+            <rect x="40" y="60" width="680" height="50" rx="6" fill="#F1F1EE" stroke="#8B9198" stroke-width="1.2"/>
+            <text x="60" y="82" font-size="13" font-weight="600" fill="#52585E">EL2</text>
+            <text x="60" y="100" font-size="12" fill="#3A4652">Hypervisor — manages guest VMs</text>
+            <text x="560" y="91" font-size="11.5" fill="#52585E">KVM host mode (if virtualized)</text>
+
+            <!-- EL3 -->
+            <rect x="40" y="0" width="680" height="50" rx="6" fill="#F1F1EE" stroke="#8B9198" stroke-width="1.2"/>
+            <text x="60" y="22" font-size="13" font-weight="600" fill="#52585E">EL3</text>
+            <text x="60" y="40" font-size="12" fill="#3A4652">Secure monitor — TrustZone world switch</text>
+            <text x="560" y="31" font-size="11.5" fill="#52585E">e.g. ARM Trusted Firmware</text>
+          </g>
+          <!-- privilege arrow -->
+          <g>
+            <line x1="18" y1="230" x2="18" y2="0" stroke="#1B1E21" stroke-width="1.4" marker-end="url(#arrow)"/>
+            <text x="10" y="250" font-size="11" font-family="IBM Plex Mono, monospace" fill="#52585E" text-anchor="middle">less priv.</text>
+            <text x="10" y="-6" font-size="11" font-family="IBM Plex Mono, monospace" fill="#52585E" text-anchor="middle" transform="translate(0,14)">more priv.</text>
+          </g>
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="4" refY="0" orient="auto">
+              <path d="M0,4 L4,0 L8,4" fill="none" stroke="#1B1E21" stroke-width="1.4"/>
+            </marker>
+          </defs>
+        </svg>
+        <figcaption>Fig. 1 — A native (non-virtualized) Linux install only ever uses EL0 and EL1; EL2/EL3 come into play with virtualization and TrustZone.</figcaption>
+      </figure>
+
+      <p>On a typical Linux system with no hypervisor involved, only the bottom two levels matter day to day:</p>
+
+      <div class="mode-box">
+        <div class="box user">
+          <span class="tag">EL0 · user mode</span>
+          <ul>
+            <li>Every normal process runs here — your shell, your applications, glibc itself.</li>
+            <li>Cannot execute privileged instructions or touch hardware registers directly.</li>
+            <li>Uses its own translation tables via <code>TTBR0_EL1</code> — one virtual address space per process.</li>
+            <li>Uses stack pointer <code>SP_EL0</code>.</li>
+          </ul>
+        </div>
+        <div class="box kernel">
+          <span class="tag">EL1 · kernel mode</span>
+          <ul>
+            <li>The Linux kernel itself — schedulers, drivers, the VFS, network stack.</li>
+            <li>Full access to hardware, MMU configuration, and privileged system registers.</li>
+            <li>Kernel address space mapped via <code>TTBR1_EL1</code>, shared across all processes.</li>
+            <li>Uses its own dedicated stack pointer, <code>SP_EL1</code> — one per task, allocated from kernel memory.</li>
+          </ul>
+        </div>
+      </div>
+
+      <p>The transition between them is always triggered by an <strong>exception</strong> — there is no other legal path from EL0 to EL1. Exceptions are either:</p>
+      <ul>
+        <li><strong>Synchronous</strong> — caused directly by the instruction stream: an explicit <code>SVC</code> (system call), or a fault such as a page fault or undefined instruction.</li>
+        <li><strong>Asynchronous</strong> — IRQ, FIQ, or SError, arriving independently of what the CPU happened to be executing.</li>
+      </ul>
+
+      <p>On any exception into EL1, the hardware — not software — automatically performs a fixed sequence: save the return address into <code>ELR_EL1</code>, save the processor state into <code>SPSR_EL1</code>, switch the active stack pointer to <code>SP_EL1</code>, and jump into the exception vector table pointed to by <code>VBAR_EL1</code>. Which of the table's 16 entries gets used depends on the exception type <em>and</em> whether it came from the current EL or a lower one — the system call path (§6) uses one specific entry of that table.</p>
+    </section>
+
+    <!-- 6 ================================================== -->
+    <section class="topic" id="syscall">
+      <div class="topic-head">
+        <span class="topic-num">§6</span>
+        <h2>Implementation of a system call — Linux, ARM64</h2>
+      </div>
+
+      <p>Take <code>write(fd, buf, count)</code> as the running example — everything below is the real path for any arm64 Linux syscall, just with a different handler function at the end.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="scflow">
+          <title id="scflow">Swimlane diagram of a Linux ARM64 system call crossing EL0 and EL1</title>
+          <g font-family="IBM Plex Mono, monospace">
+            <!-- lanes -->
+            <rect x="0" y="0" width="900" height="150" fill="#EAF1F8"/>
+            <rect x="0" y="150" width="900" height="190" fill="#FBF0E6"/>
+            <text x="16" y="24" font-size="12.5" font-weight="600" fill="#2B5D8C">USERSPACE · EL0</text>
+            <text x="16" y="174" font-size="12.5" font-weight="600" fill="#B5651D">KERNEL · EL1</text>
+
+            <!-- EL0 boxes -->
+            <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+              <rect x="30" y="50" width="150" height="60" rx="5" fill="#fff" stroke="#2B5D8C"/>
+              <text x="42" y="72" fill="#1B1E21">glibc write()</text>
+              <text x="42" y="88" fill="#52585E" font-size="10.5">x8 = __NR_write</text>
+              <text x="42" y="101" fill="#52585E" font-size="10.5">x0..x2 = args</text>
+
+              <rect x="220" y="50" width="130" height="60" rx="5" fill="#fff" stroke="#2B5D8C"/>
+              <text x="232" y="76" fill="#1B1E21">svc #0</text>
+              <text x="232" y="92" fill="#52585E" font-size="10.5">traps to EL1</text>
+
+              <rect x="720" y="50" width="150" height="60" rx="5" fill="#fff" stroke="#2B5D8C"/>
+              <text x="732" y="72" fill="#1B1E21">return to caller</text>
+              <text x="732" y="88" fill="#52585E" font-size="10.5">x0 or errno set</text>
+            </g>
+
+            <!-- EL1 boxes -->
+            <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+              <rect x="220" y="190" width="150" height="70" rx="5" fill="#fff" stroke="#B5651D"/>
+              <text x="232" y="212" fill="#1B1E21">el0_sync vector</text>
+              <text x="232" y="228" fill="#52585E" font-size="10.5">VBAR_EL1+0x400</text>
+              <text x="232" y="242" fill="#52585E" font-size="10.5">save regs → pt_regs</text>
+
+              <rect x="410" y="190" width="150" height="70" rx="5" fill="#fff" stroke="#B5651D"/>
+              <text x="422" y="212" fill="#1B1E21">do_el0_svc</text>
+              <text x="422" y="228" fill="#52585E" font-size="10.5">check ESR_EL1.EC</text>
+              <text x="422" y="242" fill="#52585E" font-size="10.5">bounds-check x8</text>
+
+              <rect x="600" y="190" width="150" height="70" rx="5" fill="#fff" stroke="#B5651D"/>
+              <text x="612" y="212" fill="#1B1E21">sys_call_table[x8]</text>
+              <text x="612" y="228" fill="#52585E" font-size="10.5">invoke sys_write()</text>
+              <text x="612" y="242" fill="#52585E" font-size="10.5">runs at EL1</text>
+
+              <rect x="410" y="285" width="340" height="45" rx="5" fill="#fff" stroke="#B5651D"/>
+              <text x="422" y="312" fill="#1B1E21">restore regs, result in x0, eret</text>
+            </g>
+
+            <!-- arrows -->
+            <g stroke="#1B1E21" stroke-width="1.3" fill="none" marker-end="url(#arrow2)">
+              <path d="M180,80 H220"/>
+              <path d="M285,110 V150 Q285,170 285,190"/>
+              <path d="M370,225 H410"/>
+              <path d="M560,225 H600"/>
+              <path d="M675,260 V285"/>
+              <path d="M580,307 H750 Q780,307 780,285 Q780,150 780,110"/>
+              <path d="M780,80 H720"/>
+            </g>
+          </g>
+          <defs>
+            <marker id="arrow2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#1B1E21"/>
+            </marker>
+          </defs>
+        </svg>
+        <figcaption>Fig. 2 — One round trip: user → SVC trap → kernel dispatch → handler → ERET → user.</figcaption>
+      </figure>
+
+      <ol class="steps">
+        <li><strong>User-side setup.</strong> The glibc wrapper places the syscall number in <code>x8</code> (arm64's convention — 32-bit ARM historically used <code>r7</code> instead) and up to six arguments in <code>x0</code>–<code>x5</code>, then executes <code>svc&nbsp;#0</code>. The immediate operand is unused by Linux; it's always <code>0</code>.</li>
+
+        <li><strong>Hardware trap.</strong> <code>svc</code> raises a synchronous exception. The CPU atomically: copies the return address into <code>ELR_EL1</code>, copies PSTATE into <code>SPSR_EL1</code>, switches the active stack pointer to <code>SP_EL1</code> (the current task's kernel stack), and jumps to <code>VBAR_EL1&nbsp;+&nbsp;0x400</code> — the vector table slot for "synchronous exception from a lower EL, using AArch64."</li>
+
+        <li><strong>Kernel entry.</strong> The <code>el0_sync</code> handler in <code>arch/arm64/kernel/entry.S</code> saves every general-purpose register plus <code>SP_EL0</code>, <code>ELR_EL1</code>, and <code>SPSR_EL1</code> onto that kernel stack, building a <code>struct pt_regs</code> — a complete snapshot of user-space's state at the moment of the trap.</li>
+
+        <li><strong>Classify the exception.</strong> The kernel reads <code>ESR_EL1</code> (Exception Syndrome Register); its <code>EC</code> field is <code>0x15</code> for an AArch64 <code>SVC</code>. This is what distinguishes "this was a system call" from a page fault or undefined instruction landing at the very same vector entry.</li>
+
+        <li><strong>Dispatch.</strong> <code>do_el0_svc</code> reads the syscall number back out of <code>pt_regs-&gt;regs[8]</code>, bounds-checks it against <code>__NR_syscalls</code>, and indexes <code>sys_call_table[]</code> — an array of function pointers built at kernel-compile time from the syscall table definitions.</li>
+
+        <li><strong>Handler runs at EL1.</strong> <code>sys_write(fd, buf, count)</code> executes with full kernel privilege. Since <code>buf</code> is a user-space pointer, the handler can't just dereference it — it goes through <code>copy_from_user()</code>/<code>copy_to_user()</code>, which validate the address actually lies within the calling process's own <code>TTBR0_EL1</code> mapping before touching it.</li>
+
+        <li><strong>Return value.</strong> Whatever the handler returns is written back into <code>pt_regs-&gt;regs[0]</code> (i.e. what will become <code>x0</code>). By POSIX convention, glibc later turns a small negative range of return values into <code>errno</code> plus a <code>-1</code> return, rather than passing the raw negative number through.</li>
+
+        <li><strong>Return to user.</strong> The kernel restores every register from <code>pt_regs</code> and executes <code>eret</code>. This single instruction atomically restores <code>PC</code> from <code>ELR_EL1</code> and <code>PSTATE</code> from <code>SPSR_EL1</code>, dropping the CPU back to EL0 at the instruction immediately after the original <code>svc</code>.</li>
+      </ol>
+
+      <div class="blk"><code><span class="c1">// conceptually, arch/arm64/kernel/entry.S + entry-common.c</span>
+el0_sync:
+    <span class="kw">kernel_entry</span> 0                  <span class="c1">// save x0-x30, SP_EL0, ELR_EL1, SPSR_EL1 -&gt; pt_regs</span>
+    mrs   x1, esr_el1              <span class="c1">// read exception syndrome</span>
+    lsr   x24, x1, #26             <span class="c1">// extract EC field</span>
+    cmp   x24, #ESR_ELx_EC_SVC64   <span class="c1">// 0x15 == SVC from AArch64</span>
+    b.eq  el0_svc
+
+el0_svc:
+    bl    do_el0_svc               <span class="c1">// C: bounds-check x8, call sys_call_table[x8]</span>
+    b     ret_to_user
+
+ret_to_user:
+    <span class="kw">kernel_exit</span> 0                  <span class="c1">// restore pt_regs -&gt; registers</span>
+    eret                            <span class="c1">// <span class="u">PC &lt;- ELR_EL1, PSTATE &lt;- SPSR_EL1, drop to EL0</span></span>
+</code></div>
+
+      <div class="callout">
+        <span class="label">Why this matters even outside Linux</span>
+        <p>This exact EL0→EL1→EL0 round trip — trap, save state, dispatch by table, restore state, atomic return — is the same shape as an interrupt or a FreeRTOS context switch on a Cortex-M, just without exception levels (Cortex-M has no EL0/EL1 split; privilege is a single bit). Understanding one gives you the other almost for free.</p>
+      </div>
+    </section>
+
+    <!-- 7 ================================================== -->
+    <section class="topic" id="rtos">
+      <div class="topic-head">
+        <span class="topic-num">§7</span>
+        <h2>What makes an OS a RTOS</h2>
+      </div>
+
+      <p>The defining property of a real-time OS is <strong>bounded worst-case latency</strong>, not raw speed. A system that always responds within 5&nbsp;ms is more "real-time" than one that averages 50&nbsp;µs but occasionally stalls for 200&nbsp;ms. RTOS design is entirely organized around making that worst case knowable and small:</p>
+
+      <ul>
+        <li><strong>Priority-based preemptive scheduling</strong> as the default policy — the highest-priority ready task always runs next, rather than the fairness/throughput goals a general-purpose scheduler (like Linux's CFS) optimizes for.</li>
+        <li><strong>Bounded critical sections.</strong> Kernel operations — taking a lock, handling a tick — must complete in small, constant, analyzable time. An RTOS kernel can't contain an internal operation that might occasionally take an unbounded amount of time.</li>
+        <li><strong>Priority-inversion protocols</strong> built into synchronization primitives — priority inheritance or priority ceiling — so a low-priority task holding a shared resource can't block a high-priority task indefinitely.</li>
+        <li><strong>Predictable interrupt latency</strong> — the time from "interrupt asserted" to "handler running" has a known upper bound.</li>
+        <li><strong>Deterministic memory behavior</strong> — many RTOS kernels avoid a general-purpose heap (or provide fixed-size pool allocators) because searching a fragmented heap isn't time-bounded.</li>
+      </ul>
+
+      <div class="callout">
+        <span class="label">The Mars Pathfinder story</span>
+        <p>In 1997 the Pathfinder rover, running VxWorks, began resetting itself intermittently. The cause was classic unbounded priority inversion: a low-priority meteorological task held a mutex that a high-priority bus-management task needed, while a medium-priority task kept preempting the low-priority one — so the high-priority task waited far longer than its deadline allowed. Engineers fixed it remotely, in flight, by enabling priority inheritance on the mutex. It's the textbook illustration of why "priority inversion protocol" is a design requirement, not an optimization.</p>
+      </div>
+
+      <h3>Hard vs soft real-time</h3>
+      <p><strong>Hard real-time</strong> — missing a deadline is a system failure (airbag deployment timing, engine ignition control). <strong>Soft real-time</strong> — missing a deadline degrades quality but isn't catastrophic (a late video frame, a delayed sensor sample). Whether you need an RTOS at all, and how strict a one, follows directly from which category your deadlines fall into.</p>
+
+      <p>Worth noting: a general-purpose OS isn't automatically disqualified. Mainline Linux's <code>PREEMPT_RT</code> patch set makes the kernel almost fully preemptible and applies priority inheritance to kernel locks, pushing stock Linux much closer to soft (and in some configurations, near-hard) real-time behavior — without changing the syscall path described in §6 at all.</p>
+    </section>
+
+    <!-- 8 ================================================== -->
+    <section class="topic" id="examples">
+      <div class="topic-head">
+        <span class="topic-num">§8</span>
+        <h2>Real-time embedded systems</h2>
+      </div>
+
+      <p>What an RTOS actually buys you is easiest to see against real hardware/software pairings, spanning very different stakes:</p>
+
+      <table>
+        <thead><tr><th>Domain</th><th>Hardware</th><th>RTOS</th><th>Why real-time matters here</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Hobbyist / drones</td>
+            <td class="hw">STM32F4/F7 (Cortex-M4/M7)</td>
+            <td>FreeRTOS</td>
+            <td>Flight-controller loops (attitude estimation, motor mixing) must run on a fixed period or the craft becomes unstable.</td>
+          </tr>
+          <tr>
+            <td>Industrial control</td>
+            <td class="hw">NXP i.MX RT crossover MCU</td>
+            <td>FreeRTOS / Zephyr</td>
+            <td>Motor-drive control loops need microsecond-level, jitter-free timing.</td>
+          </tr>
+          <tr>
+            <td>Automotive safety</td>
+            <td class="hw">TI Hercules / Infineon AURIX (Cortex-R, lockstep)</td>
+            <td>AUTOSAR OS / SafeRTOS</td>
+            <td>ABS and airbag control are hard real-time <em>and</em> safety-certified (ISO 26262); lockstep cores catch silicon-level faults.</td>
+          </tr>
+          <tr>
+            <td>Industrial / robotics</td>
+            <td class="hw">Xilinx Zynq-7000 (dual Cortex-A9 + FPGA)</td>
+            <td>PREEMPT_RT Linux or Xenomai on the A9s; FPGA fabric for hard-deadline logic</td>
+            <td>Combines a Linux-capable core for orchestration with FPGA determinism for the control loop that can't tolerate any jitter at all.</td>
+          </tr>
+          <tr>
+            <td>Aerospace</td>
+            <td class="hw">RAD-hardened PowerPC / ARM</td>
+            <td>VxWorks</td>
+            <td>Mars rovers (Pathfinder, Curiosity, Perseverance) — see the priority-inversion story above.</td>
+          </tr>
+          <tr>
+            <td>Automotive infotainment</td>
+            <td class="hw">ARM Cortex-A application processors</td>
+            <td>QNX Neutrino</td>
+            <td>Microkernel fault isolation plus real-time guarantees for the instrument cluster, even while the infotainment side runs untrusted apps.</td>
+          </tr>
+          <tr>
+            <td>IoT / consumer</td>
+            <td class="hw">ESP32 (dual-core Xtensa)</td>
+            <td>FreeRTOS</td>
+            <td>One core often runs the Wi-Fi/Bluetooth stack, the other application logic — FreeRTOS is what makes that split manageable.</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      <span>Introduction to OS — training handout</span>
+      <span>Reference: ARMv8-A Architecture Reference Manual · Linux arch/arm64/kernel</span>
+    </footer>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Priority Inversion, Priority Inheritance & Mars Pathfinder</title>
+<style>
+  :root {
+    --bg: #f7f9fc;
+    --card: #ffffff;
+    --text: #1f2937;
+    --muted: #5b6472;
+    --border: #d8dee8;
+    --high: #c0392b;
+    --medium: #d68910;
+    --low: #2874a6;
+    --good: #218c74;
+    --blocked: #7f8c8d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg);
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 36px 22px 60px; }
+  h1 { font-size: 2.25rem; margin-bottom: 8px; }
+  h2 { margin-top: 38px; font-size: 1.55rem; }
+  h3 { margin-top: 24px; }
+  p { max-width: 900px; }
+  .subtitle { color: var(--muted); font-size: 1.05rem; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 14px; padding: 22px; margin: 18px 0;
+    box-shadow: 0 2px 10px rgba(30,50,80,.05);
+  }
+  .key {
+    background: #eef5ff; border-left: 5px solid #3973ac;
+    padding: 14px 18px; border-radius: 8px; margin: 18px 0;
+  }
+  code {
+    background: #eef1f5; padding: 2px 6px; border-radius: 5px;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  }
+  .priority { display: grid; grid-template-columns: 120px 1fr; gap: 8px 15px; }
+  .pill { border-radius: 999px; padding: 3px 10px; color: white; text-align: center; font-weight: 700; }
+  .high { background: var(--high); }
+  .medium { background: var(--medium); }
+  .low { background: var(--low); }
+  .good { background: var(--good); }
+
+  .timeline-wrap { overflow-x: auto; }
+  .timeline {
+    min-width: 850px; border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; background: white;
+  }
+  .axis {
+    display: grid; grid-template-columns: 150px repeat(10, 1fr);
+    border-bottom: 1px solid var(--border); background: #f1f4f8;
+  }
+  .axis div { padding: 7px 5px; text-align: center; border-right: 1px solid var(--border); font-size: .82rem; }
+  .axis div:first-child { text-align: left; font-weight: 700; }
+  .row {
+    display: grid; grid-template-columns: 150px repeat(10, 1fr);
+    min-height: 58px; border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: 0; }
+  .label { padding: 17px 10px; font-weight: 700; background: #fafbfc; border-right: 1px solid var(--border); }
+  .slot { border-right: 1px solid #e6e9ee; display: flex; align-items: center; justify-content: center; font-size: .72rem; text-align: center; padding: 3px; }
+  .run-high { background: #f4cccc; color: #7b241c; font-weight: 700; }
+  .run-med { background: #f9e79f; color: #7d5a00; font-weight: 700; }
+  .run-low { background: #cfe2f3; color: #1b4f72; font-weight: 700; }
+  .blocked { background: #e5e7e9; color: #4d5656; }
+  .inherit { background: #d5f5e3; color: #17633d; font-weight: 700; }
+  .empty { background: #fff; }
+
+  .legend { display:flex; flex-wrap:wrap; gap:10px 18px; margin-top:12px; font-size:.9rem; }
+  .legend span { display:flex; align-items:center; gap:6px; }
+  .swatch { width:18px; height:18px; border:1px solid #ccd2da; border-radius:4px; display:inline-block; }
+
+  table { width:100%; border-collapse:collapse; margin:15px 0; background:white; }
+  th, td { border:1px solid var(--border); padding:11px; vertical-align:top; text-align:left; }
+  th { background:#f1f4f8; }
+  .flow { display:grid; grid-template-columns:1fr 60px 1fr 60px 1fr; align-items:center; gap:8px; }
+  .box { border:1px solid var(--border); background:#fff; border-radius:10px; padding:15px; }
+  .arrow { text-align:center; font-size:1.6rem; color:#687383; }
+  .source { font-size:.9rem; color:var(--muted); }
+  @media(max-width:700px) {
+    h1 { font-size:1.8rem; }
+    .flow { grid-template-columns:1fr; }
+    .arrow { transform:rotate(90deg); }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Priority Inversion & Priority Inheritance</h1>
+  <p class="subtitle">A practical RTOS explanation with the 1997 Mars Pathfinder case study and Gantt-style timelines.</p>
+
+  <div class="key">
+    <strong>One-sentence definition:</strong> Priority inversion occurs when a high-priority task is forced to wait for a resource held by a lower-priority task, and a medium-priority task can indirectly keep the high-priority task waiting.
+  </div>
+
+  <h2>1. What is priority inversion?</h2>
+  <p>Consider three tasks:</p>
+  <div class="priority">
+    <span class="pill high">HIGH</span><div><strong>H</strong> — time-critical task; needs shared resource <code>R</code>.</div>
+    <span class="pill medium">MEDIUM</span><div><strong>M</strong> — does not need <code>R</code>, but can preempt lower-priority work.</div>
+    <span class="pill low">LOW</span><div><strong>L</strong> — owns/holds <code>R</code> for a short critical section.</div>
+  </div>
+
+  <p>The surprising sequence is:</p>
+  <ol>
+    <li><strong>L</strong> locks resource <code>R</code>.</li>
+    <li><strong>H</strong> becomes runnable and asks for <code>R</code>, so H blocks.</li>
+    <li><strong>M</strong> becomes runnable. Since M has higher priority than L, M preempts L.</li>
+    <li>L cannot run to finish its critical section and release R.</li>
+    <li>H therefore remains blocked even though H has the highest priority.</li>
+  </ol>
+
+  <p>This is called <strong>priority inversion</strong>: the effective progress of the high-priority task is being controlled by lower-priority work.</p>
+
+  <h2>2. The problem visually</h2>
+  <div class="card timeline-wrap">
+    <div class="timeline">
+      <div class="axis">
+        <div>Time</div><div>0</div><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div>
+      </div>
+      <div class="row">
+        <div class="label">H — HIGH</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot blocked">WAIT R</div><div class="slot blocked">WAIT R</div><div class="slot blocked">WAIT R</div><div class="slot blocked">WAIT R</div><div class="slot blocked">WAIT R</div><div class="slot run-high">RUN</div><div class="slot run-high">RUN</div><div class="slot run-high">RUN</div>
+      </div>
+      <div class="row">
+        <div class="label">M — MEDIUM</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+      <div class="row">
+        <div class="label">L — LOW</div>
+        <div class="slot run-low">LOCK R</div><div class="slot run-low">CRITICAL</div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot run-low">RELEASE R</div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="swatch run-high"></i> High task running</span>
+      <span><i class="swatch run-med"></i> Medium task running</span>
+      <span><i class="swatch run-low"></i> Low task running / resource owner</span>
+      <span><i class="swatch blocked"></i> Blocked or preempted</span>
+    </div>
+  </div>
+
+  <p><strong>The important point:</strong> H is the highest-priority task, but H cannot make progress because L owns the resource. M makes the inversion worse because M keeps preempting L, preventing L from releasing the resource.</p>
+
+  <h2>3. How can priority inversion be solved?</h2>
+  <table>
+    <tr><th>Technique</th><th>Idea</th><th>Typical use</th></tr>
+    <tr><td><strong>Priority inheritance</strong></td><td>A low-priority task temporarily inherits the priority of a higher-priority task waiting for its resource.</td><td>Common RTOS mutex solution.</td></tr>
+    <tr><td><strong>Priority ceiling</strong></td><td>A resource has a predefined ceiling priority; locking it raises the owner's priority to that ceiling.</td><td>Systems requiring stronger, predictable blocking bounds.</td></tr>
+    <tr><td><strong>Short critical sections</strong></td><td>Hold mutexes for the shortest practical time.</td><td>Good design practice regardless of protocol.</td></tr>
+    <tr><td><strong>Reduce shared resources</strong></td><td>Use message passing, lock-free structures where appropriate, or ownership-based designs.</td><td>Architectures where shared locking is a bottleneck.</td></tr>
+    <tr><td><strong>Careful priority design</strong></td><td>Avoid unnecessary medium-priority work preempting tasks that hold critical resources.</td><td>Real-time scheduling design.</td></tr>
+  </table>
+
+  <h2>4. Priority inheritance — how it works</h2>
+  <p>Priority inheritance changes the scheduler's behavior when a high-priority task blocks on a mutex.</p>
+
+  <div class="flow">
+    <div class="box"><strong>1. L locks R</strong><br>L owns the mutex at low priority.</div>
+    <div class="arrow">→</div>
+    <div class="box"><strong>2. H requests R</strong><br>H blocks because L owns R.</div>
+    <div class="arrow">→</div>
+    <div class="box"><strong>3. L inherits H's priority</strong><br>L temporarily runs at H's priority and finishes quickly.</div>
+  </div>
+
+  <p>Then:</p>
+  <ol>
+    <li>L finishes its critical section.</li>
+    <li>L releases R.</li>
+    <li>H immediately becomes able to acquire R and run.</li>
+    <li>L's priority returns to its original value.</li>
+  </ol>
+
+  <div class="card">
+    <strong>Key idea:</strong> Priority inheritance does <em>not</em> permanently change task priorities. It temporarily <strong>donates/inherits</strong> the blocked higher priority to the resource-holding task.
+  </div>
+
+  <h2>5. Gantt chart with priority inheritance</h2>
+  <div class="card timeline-wrap">
+    <div class="timeline">
+      <div class="axis">
+        <div>Time</div><div>0</div><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div><div>8</div><div>9</div>
+      </div>
+      <div class="row">
+        <div class="label">H — HIGH</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot blocked">WAIT R</div><div class="slot blocked">WAIT R</div><div class="slot run-high">RUN</div><div class="slot run-high">RUN</div><div class="slot run-high">RUN</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+      <div class="row">
+        <div class="label">M — MEDIUM</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div>
+      </div>
+      <div class="row">
+        <div class="label">L — LOW</div>
+        <div class="slot run-low">LOCK R</div><div class="slot run-low">CRITICAL</div><div class="slot inherit">INHERIT H</div><div class="slot inherit">FINISH R</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="swatch inherit"></i> L temporarily executes at inherited HIGH priority</span>
+      <span><i class="swatch blocked"></i> Task is prevented from running</span>
+    </div>
+  </div>
+
+  <h2>6. Mars Pathfinder — what happened?</h2>
+  <p>NASA's Mars Pathfinder landed on Mars on July 4, 1997. Its flight software used the VxWorks real-time operating system. A few days into the mission, the spacecraft experienced intermittent system resets. The reset was triggered when a watchdog/deadline check detected that an important data-distribution task had not completed on time. The underlying cause was a priority inversion involving a mutex used by the VxWorks <code>select()</code>/pipe IPC mechanism.</p>
+
+  <p>The relevant tasks were approximately:</p>
+  <table>
+    <tr><th>Task</th><th>Priority role</th><th>What mattered</th></tr>
+    <tr><td><code>bc_sched</code></td><td>Very high</td><td>Scheduled the next 1553 bus transaction cycle and checked that the distribution work had completed.</td></tr>
+    <tr><td><code>bc_dist</code></td><td>High</td><td>Distributed collected spacecraft data and had a hard timing requirement.</td></tr>
+    <tr><td><code>ASI/MET</code></td><td>Low</td><td>Meteorological task that could hold the relevant mutex while using IPC.</td></tr>
+    <tr><td>Other communication/sensor tasks</td><td>Medium</td><td>Could preempt ASI/MET while it held the resource.</td></tr>
+  </table>
+
+  <h3>The failure sequence</h3>
+  <ol>
+    <li><code>ASI/MET</code>, a low-priority task, acquired a mutex associated with the IPC/select mechanism.</li>
+    <li>It was preempted before completing the operation that would release the mutex.</li>
+    <li>Medium-priority tasks ran and kept the low-priority task from getting CPU time.</li>
+    <li><code>bc_dist</code>, a high-priority task, needed the same protected resource and became blocked.</li>
+    <li><code>bc_sched</code> subsequently detected that <code>bc_dist</code> had not completed its cycle by the deadline.</li>
+    <li>The watchdog/deadline response reset the spacecraft computer.</li>
+  </ol>
+
+  <p>JPL reproduced the failure on a Pathfinder replica using VxWorks tracing. The trace made the priority-inversion sequence apparent. The relevant semaphore had been configured without priority inheritance.</p>
+
+  <h2>7. Mars Pathfinder Gantt chart</h2>
+  <div class="card timeline-wrap">
+    <div class="timeline">
+      <div class="axis">
+        <div>Sequence</div><div>t0</div><div>t1</div><div>t2</div><div>t3</div><div>t4</div><div>t5</div><div>t6</div><div>t7</div><div>t8</div><div>t9</div>
+      </div>
+      <div class="row">
+        <div class="label">bc_sched — very high</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot run-high">CHECK</div><div class="slot run-high">RESET</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+      <div class="row">
+        <div class="label">bc_dist — HIGH</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot run-high">RUN</div><div class="slot blocked">WAIT MUTEX</div><div class="slot blocked">WAIT</div><div class="slot blocked">WAIT</div><div class="slot blocked">DEADLINE</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+      <div class="row">
+        <div class="label">Medium tasks</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+      <div class="row">
+        <div class="label">ASI/MET — LOW</div>
+        <div class="slot run-low">LOCK</div><div class="slot run-low">IPC</div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot run-low">RELEASE</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><i class="swatch run-high"></i> High-priority activity</span>
+      <span><i class="swatch run-med"></i> Medium-priority activity</span>
+      <span><i class="swatch run-low"></i> Low-priority resource owner</span>
+      <span><i class="swatch blocked"></i> Blocked/preempted</span>
+    </div>
+  </div>
+
+  <div class="key">
+    <strong>Why was this an inversion?</strong><br>
+    <code>bc_dist</code> had higher priority than <code>ASI/MET</code>, but it could not proceed because ASI/MET held the required mutex. Medium-priority tasks then prevented ASI/MET from running and releasing the mutex. Thus, medium-priority work indirectly delayed the high-priority task.
+  </div>
+
+  <h2>8. How priority inheritance changed the Pathfinder sequence</h2>
+  <div class="card timeline-wrap">
+    <div class="timeline">
+      <div class="axis">
+        <div>Sequence</div><div>t0</div><div>t1</div><div>t2</div><div>t3</div><div>t4</div><div>t5</div><div>t6</div><div>t7</div><div>t8</div><div>t9</div>
+      </div>
+      <div class="row">
+        <div class="label">bc_dist — HIGH</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot run-high">RUN</div><div class="slot blocked">WAIT</div><div class="slot run-high">RUN</div><div class="slot run-high">RUN</div><div class="slot run-high">DONE</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+      <div class="row">
+        <div class="label">Medium tasks</div>
+        <div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot blocked">PREEMPTED</div><div class="slot blocked">PREEMPTED</div><div class="slot run-med">RUN</div><div class="slot run-med">RUN</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+      <div class="row">
+        <div class="label">ASI/MET — LOW → INHERITED</div>
+        <div class="slot run-low">LOCK</div><div class="slot run-low">IPC</div><div class="slot blocked">WAIT H</div><div class="slot inherit">INHERIT</div><div class="slot inherit">FINISH</div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div><div class="slot empty"></div>
+      </div>
+    </div>
+  </div>
+
+  <p>With priority inheritance enabled, once <code>bc_dist</code> blocked on the mutex, the lower-priority owner was temporarily elevated to the waiting task's priority. This prevented medium-priority work from indefinitely preempting the resource owner. The owner could finish and release the resource, allowing <code>bc_dist</code> to meet its timing requirement.</p>
+
+  <h2>9. What was actually fixed?</h2>
+  <p>According to Glenn Reeves, who led the Pathfinder software team, the relevant VxWorks semaphore was changed so that priority inheritance was enabled. The change was made after the failure was reproduced and analyzed on Earth, and the patched software was uploaded to the spacecraft. The team tested the change for possible performance and behavioral effects before applying it to the flight system.</p>
+
+  <div class="key">
+    <strong>RTOS lesson:</strong> A mutex is not merely a data-protection mechanism. In a real-time system, its scheduling behavior can affect whether high-priority tasks meet their deadlines. Mutexes protecting timing-critical resources should therefore be designed with bounded blocking and an appropriate priority-inversion protocol.
+  </div>
+
+  <h2>10. Quick mental model</h2>
+  <table>
+    <tr><th>Without priority inheritance</th><th>With priority inheritance</th></tr>
+    <tr>
+      <td>L holds R → H waits → M preempts L → H waits longer → deadline may be missed.</td>
+      <td>L holds R → H waits → L inherits H priority → L finishes → releases R → H runs.</td>
+    </tr>
+  </table>
+
+  <p class="source"><strong>Historical sources:</strong> Glenn E. Reeves, Mars Pathfinder software team lead, “What Really Happened on Mars?”; Cornell University reproduction of the account; supporting RTOS teaching material. The Pathfinder-specific description in this page is based primarily on Reeves' account.</p>
+  <p class="source">
+    Source reference: NASA/JPL team account reproduced at
+    https://postmortem.io/incidents/nasa--1997-07-04--mars-pathfinder-priority-inversion/
+    and Cornell's copy at
+    https://www.cs.cornell.edu/courses/cs614/1999sp/papers/pathfinder.html
+  </p>
+</main>
+</body>
+</html>

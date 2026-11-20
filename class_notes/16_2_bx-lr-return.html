@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>bx lr: normal return vs. exception return</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --teal:     #2E7D5B;
+    --teal-bg:  #E8F3ED;
+    --amber:    #A05A2C;
+    --amber-bg: #FAF0E6;
+    --code-bg: #232830;
+    --code-ink:#D7DCE1;
+    --code-dim:#7C8794;
+    --code-acc:#8FBCE6;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  article{ max-width:880px; margin:0 auto; padding:60px 24px 110px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:27px; font-weight:700; line-height:1.3; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17px; color:var(--ink-soft); max-width:70ch; margin:0 0 8px; }
+  p{ max-width:74ch; margin:0 0 16px; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+
+  h2{ font-size:20px; font-weight:700; margin:44px 0 6px; letter-spacing:-.01em; }
+  hr.div{ border:none; border-top:1px solid var(--rule); margin:42px 0; }
+
+  figure{ margin:20px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); margin-top:9px; max-width:78ch; }
+
+  .listing{ background:var(--code-bg); border-radius:9px; padding:14px 18px; margin:16px 0 22px; overflow-x:auto; }
+  .listing .fname{ font-family:var(--mono); font-size:11px; color:var(--code-dim); margin:0 0 10px; }
+  .listing code{ background:none; padding:0; color:var(--code-ink); font-size:12.5px; line-height:1.7; display:block; white-space:pre; }
+  .cm{ color:var(--code-dim); }
+  .rg{ color:var(--code-acc); }
+
+  table{ width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:14px; }
+  th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); border-bottom:1.5px solid var(--ink); }
+  td.val{ font-family:var(--mono); font-size:13px; color:var(--amber); white-space:nowrap; }
+
+  .aside{ border-left:2px solid var(--teal-bg); padding-left:16px; margin:20px 0; font-size:15px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+
+  .footline{ margin-top:52px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+</style>
+</head>
+<body>
+<article>
+
+  <p class="byline">stm32f103 workspace notes</p>
+  <h1><code>bx lr</code>: a normal return vs. an exception return</h1>
+  <p class="dek">Same mnemonic, same machine code, either way. The CPU doesn't tell these two cases apart by looking at the instruction - it tells them apart by looking at what's actually sitting in <code>lr</code> at that moment.</p>
+
+  <figure>
+    <svg viewBox="0 0 760 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="fork-t">
+      <title id="fork-t">bx lr forks into an ordinary branch or a full exception return, depending on the value held in LR</title>
+      <defs><marker id="m1" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#5B6167"/></marker></defs>
+      <g font-family="IBM Plex Mono, monospace" font-size="13">
+
+        <rect x="280" y="10" width="200" height="56" rx="9" fill="#F3F4F0" stroke="#5B6167" stroke-width="1.3"/>
+        <text x="380" y="34" text-anchor="middle" font-weight="700">bx lr executes</text>
+        <text x="380" y="52" text-anchor="middle" font-size="10" fill="#5B6167">identical machine code, either way</text>
+
+        <path d="M330,66 L200,110" stroke="#5B6167" stroke-width="1.3" fill="none" marker-end="url(#m1)"/>
+        <path d="M430,66 L560,110" stroke="#5B6167" stroke-width="1.3" fill="none" marker-end="url(#m1)"/>
+
+        <!-- left: normal -->
+        <rect x="80" y="110" width="240" height="60" rx="9" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+        <text x="200" y="134" text-anchor="middle" font-weight="700">lr = ordinary code address</text>
+        <text x="200" y="152" text-anchor="middle" font-size="10.5" fill="#2E7D5B">e.g. 0x08000123</text>
+
+        <path d="M200,170 V214" stroke="#5B6167" stroke-width="1.3" fill="none" marker-end="url(#m1)"/>
+
+        <rect x="80" y="214" width="240" height="56" rx="9" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+        <text x="200" y="238" text-anchor="middle" font-weight="700">pc = lr</text>
+        <text x="200" y="256" text-anchor="middle" font-size="10.5" fill="#2E7D5B">one register write, nothing else</text>
+
+        <path d="M200,270 V314" stroke="#5B6167" stroke-width="1.3" fill="none" marker-end="url(#m1)"/>
+
+        <rect x="80" y="314" width="240" height="56" rx="9" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+        <text x="200" y="338" text-anchor="middle" font-weight="700">Ordinary return</text>
+        <text x="200" y="356" text-anchor="middle" font-size="10.5" fill="#2E7D5B">same mode, same stack as before</text>
+
+        <!-- right: exception -->
+        <rect x="440" y="110" width="240" height="60" rx="9" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="560" y="134" text-anchor="middle" font-weight="700">lr = EXC_RETURN pattern</text>
+        <text x="560" y="152" text-anchor="middle" font-size="10.5" fill="#A05A2C">e.g. 0xFFFFFFFD</text>
+
+        <path d="M560,170 V214" stroke="#5B6167" stroke-width="1.3" fill="none" marker-end="url(#m1)"/>
+
+        <rect x="440" y="214" width="240" height="56" rx="9" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="560" y="238" text-anchor="middle" font-weight="700">Hardware intercepts it</text>
+        <text x="560" y="256" text-anchor="middle" font-size="10.5" fill="#A05A2C">not treated as a branch target</text>
+
+        <path d="M560,270 V314" stroke="#5B6167" stroke-width="1.3" fill="none" marker-end="url(#m1)"/>
+
+        <rect x="440" y="314" width="240" height="66" rx="9" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="560" y="336" text-anchor="middle" font-weight="700">Exception return</text>
+        <text x="560" y="354" text-anchor="middle" font-size="10.5" fill="#A05A2C">auto-unstacks 8 registers,</text>
+        <text x="560" y="369" text-anchor="middle" font-size="10.5" fill="#A05A2C">switches mode + stack</text>
+
+        <text x="380" y="430" text-anchor="middle" font-size="12" fill="#9198A0">the fork isn't in the instruction - it's entirely in what value happened to be in lr</text>
+      </g>
+    </svg>
+    <figcaption>Every <code>EXC_RETURN</code> value lives in the 0xFFFFFFF0-0xFFFFFFFF range - an address space that can never hold real code on a Cortex-M3, which is exactly what makes it safe to use as a signal rather than a genuine branch target.</figcaption>
+  </figure>
+
+  <hr class="div">
+
+  <h2>What EXC_RETURN's bits actually mean</h2>
+  <p>Only the low nibble carries information - the upper 28 bits are always the same fixed <code>0xFFFFFFF</code> pattern, purely so the value falls in that unimplementable range.</p>
+
+  <table>
+    <thead><tr><th>Value</th><th>Returns to</th><th>Using</th></tr></thead>
+    <tbody>
+      <tr><td class="val">0xFFFFFFF1</td><td>Handler mode</td><td>MSP</td></tr>
+      <tr><td class="val">0xFFFFFFF9</td><td>Thread mode</td><td>MSP</td></tr>
+      <tr><td class="val">0xFFFFFFFD</td><td>Thread mode</td><td>PSP</td></tr>
+    </tbody>
+  </table>
+  <p><code>0xFFFFFFFD</code> is the exact value <code>vPortSVCHandler</code> forces with <code>orr r14, #0xd</code> - bit&nbsp;2 set means "Thread mode," bit&nbsp;0 set means "PSP."</p>
+
+  <hr class="div">
+
+  <h2>Most handlers never touch lr at all</h2>
+  <p>This is the detail that makes the whole scheme quietly elegant: hardware writes the correct <code>EXC_RETURN</code> value into <code>lr</code> automatically, the instant an exception is <em>entered</em> - based on whatever mode and stack were active right before it fired. A handler that does nothing special to <code>lr</code> will return correctly without knowing any of this happened.</p>
+
+  <div class="listing">
+    <p class="fname">two handlers, two very different relationships with lr</p>
+    <pre><code><span class="cm">// SysTick_Handler - plain C, compiler-generated epilogue</span>
+<span class="cm">// never touches lr - it's still exactly what hardware set at entry</span>
+<span class="kw">void</span> xPortSysTickHandler(<span class="kw">void</span>)
+{
+    <span class="cm">/* ... */</span>
+}   <span class="cm">// compiler emits: bx lr (or pop {..., pc})</span>
+    <span class="cm">// this WORKS correctly with no special-casing at all</span>
+
+<span class="cm">// vPortSVCHandler - naked, hand-written assembly</span>
+<span class="cm">// FORCES a specific EXC_RETURN - it can't trust what's already there</span>
+    orr  <span class="rg">r14</span>, #0xd          <span class="cm">; overwrite whatever lr held -</span>
+    bx   <span class="rg">r14</span>              <span class="cm">;   force "Thread mode, PSP" regardless</span></code></pre>
+  </div>
+
+  <p class="aside"><b>Why the difference.</b> <code>SysTick_Handler</code> is returning to <em>the same context that was interrupted</em> - whatever that was is still correct. <code>vPortSVCHandler</code> and <code>PendSV_Handler</code> exist specifically to hand off to a <em>different</em> task's context than whatever was running when the exception fired - "whatever was there before" is exactly the answer they can't use, so they overwrite <code>lr</code> deliberately before returning.</p>
+
+  <div class="footline">stm32f103 workspace notes &middot; continues from the SysTick / PendSV / SVC and MSP notes</div>
+
+</article>
+</body>
+</html>

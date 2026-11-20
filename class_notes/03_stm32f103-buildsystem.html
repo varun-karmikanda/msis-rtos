@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The stm32f103 Build System, Explained</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --panel:   #F3F4F0;
+    --accent:  #35618C;
+    --accent-bg:#EAF1F8;
+    --run:     #2E7D5B;
+    --run-bg:  #E8F3ED;
+    --block:   #A05A2C;
+    --block-bg:#FAF0E6;
+    --purple:  #6E5A96;
+    --purple-bg:#EFEBF5;
+    --code-bg: #232830;
+    --code-ink:#D7DCE1;
+    --code-dim:#7C8794;
+    --code-acc:#8FBCE6;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+  a{ color:var(--accent); }
+
+  .layout{ max-width:1240px; margin:0 auto; display:flex; align-items:flex-start; }
+  .toc{ position:sticky; top:0; align-self:flex-start; width:240px; flex:0 0 240px; height:100vh; overflow-y:auto; padding:32px 18px 32px 26px; border-right:1px solid var(--rule); box-sizing:border-box; }
+  .toc-kicker{ font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); margin:0 0 14px; }
+  .toc ol{ list-style:none; margin:0; padding:0; counter-reset:toc; }
+  .toc li{ counter-increment:toc; margin-bottom:2px; }
+  .toc a{ display:flex; gap:10px; padding:6px 8px; border-radius:6px; color:var(--ink-soft); font-size:13px; text-decoration:none; line-height:1.35; }
+  .toc a:hover{ background:var(--accent-bg); color:var(--accent); }
+  .toc a::before{ content: counter(toc, decimal-leading-zero); font-family:var(--mono); font-size:10.5px; color:var(--ink-dim); padding-top:1px; }
+  .toc .sub{ padding-left:20px; font-size:12px; }
+
+  main{ padding:56px 52px 110px; min-width:0; flex:1 1 auto; }
+  .cover{ margin-bottom:48px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:32px; font-weight:700; line-height:1.22; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17.5px; color:var(--ink-soft); max-width:70ch; margin:0; }
+
+  p{ max-width:74ch; margin:0 0 16px; }
+  ul,ol.steps{ margin:0 0 16px; padding-left:22px; max-width:72ch; }
+  li{ margin-bottom:6px; }
+
+  section.topic{ padding-top:50px; border-top:1px solid var(--rule); scroll-margin-top:20px; }
+  section.topic:first-of-type{ border-top:none; }
+  .topic-head{ display:flex; align-items:baseline; gap:14px; margin-bottom:18px; }
+  .topic-num{ font-family:var(--mono); font-size:13px; color:var(--accent); background:var(--accent-bg); border-radius:5px; padding:3px 9px; flex:none; }
+  .topic-head h2{ font-size:23px; font-weight:700; margin:0; letter-spacing:-.01em; }
+  h3{ font-size:16px; font-weight:700; margin:34px 0 10px; font-family:var(--mono); }
+  h3 .file{ color:var(--accent); }
+
+  figure{ margin:22px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-top:10px; max-width:76ch; }
+
+  table{ width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:14px; }
+  th,td{ text-align:left; padding:8px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); border-bottom:1.5px solid var(--ink); }
+  td.reg{ font-family:var(--mono); font-size:12.5px; color:var(--accent); white-space:nowrap; }
+
+  .listing{ background:var(--code-bg); border-radius:9px; padding:16px 20px; margin:16px 0 22px; overflow-x:auto; }
+  .listing .fname{ font-family:var(--mono); font-size:11px; color:var(--code-dim); margin:0 0 10px; }
+  .listing pre{ margin:0; }
+  .listing code{ background:none; padding:0; color:var(--code-ink); font-size:12.5px; line-height:1.7; display:block; white-space:pre; }
+  .cm{ color:var(--code-dim); }
+  .rg{ color:var(--code-acc); }
+  .kw{ color:#E3B778; }
+
+  .rmnote{ display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11.5px; color:var(--block); background:var(--block-bg); padding:2px 9px; border-radius:20px; margin:2px 4px 2px 0; }
+
+  .steps{ counter-reset:step; list-style:none; padding-left:0; }
+  .steps li{ counter-increment:step; position:relative; padding-left:38px; margin-bottom:12px; }
+  .steps li::before{ content: counter(step); position:absolute; left:0; top:1px; width:22px; height:22px; border-radius:50%; background:var(--ink); color:var(--bg); font-family:var(--mono); font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; }
+
+  .aside{ border-left:2px solid var(--accent-bg); padding-left:16px; margin:20px 0; font-size:15.5px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+
+  .footline{ margin-top:60px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+
+  @media (max-width:900px){
+    .layout{ flex-direction:column; }
+    .toc{ width:100%; flex-basis:auto; }
+    .toc{ position:relative; height:auto; border-right:none; border-bottom:1px solid var(--rule); }
+    main{ padding:36px 22px 80px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <nav class="toc" aria-label="Table of contents">
+    <p class="toc-kicker">contents</p>
+    <ol>
+      <li><a href="#layout">Overall layout</a></li>
+      <li><a href="#common">Inside common/</a>
+        <ol style="border:none;padding:2px 0 0;">
+          <li class="sub"><a href="#startup">startup_stm32f103.s</a></li>
+          <li class="sub"><a href="#linker">stm32f103.ld</a></li>
+          <li class="sub"><a href="#regs">stm32f103_regs.h</a></li>
+          <li class="sub"><a href="#commonmk">common.mk</a></li>
+        </ol>
+      </li>
+      <li><a href="#ledblink">led-blink/</a></li>
+      <li><a href="#threethread">three-thread-blink/</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="cover">
+      <p class="byline">stm32f103 workspace notes</p>
+      <h1>The stm32f103 Build System, Explained</h1>
+      <p class="dek">A walk through every file in <code>stm32f103.zip</code> - what it does, why it's shaped the way it is, and where in the reference manuals the numbers came from.</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="layout">
+      <div class="topic-head"><span class="topic-num">1</span><h2>Overall layout</h2></div>
+      <p>One root directory holds everything: FreeRTOS's source, the pieces every project shares, and each project in its own folder.</p>
+
+      <figure>
+        <svg viewBox="0 0 940 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="layout-t">
+          <title id="layout-t">Directory layout of the stm32f103 workspace</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12.5">
+            <rect x="10" y="10" width="920" height="320" rx="10" fill="none" stroke="#D8DAD3" stroke-width="1.3" stroke-dasharray="4,3"/>
+            <text x="30" y="34" font-weight="700" font-size="14">stm32f103/</text>
+
+            <rect x="40" y="52" width="250" height="46" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.3"/>
+            <text x="56" y="72" font-weight="700">FreeRTOS/</text>
+            <text x="56" y="88" font-size="10" fill="#5B6167">kernel source, you clone it</text>
+
+            <rect x="310" y="52" width="600" height="46" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.3"/>
+            <text x="326" y="72" font-weight="700">common/</text>
+            <text x="326" y="88" font-size="10" fill="#5B6167">startup, linker script, register header, shared Makefile rules - written once, used by every project</text>
+
+            <rect x="40" y="112" width="410" height="46" rx="6" fill="#F3F4F0" stroke="#9198A0" stroke-width="1.3"/>
+            <text x="56" y="132" font-weight="700">led-blink/</text>
+            <text x="56" y="148" font-size="10" fill="#5B6167">Makefile + main.c - baremetal, no RTOS</text>
+
+            <rect x="470" y="112" width="440" height="46" rx="6" fill="#F3F4F0" stroke="#9198A0" stroke-width="1.3"/>
+            <text x="486" y="132" font-weight="700">three-thread-blink/</text>
+            <text x="486" y="148" font-size="10" fill="#5B6167">Makefile + main.c + FreeRTOSConfig.h</text>
+
+            <text x="30" y="188" font-size="11" fill="#9198A0">a new project is just another folder here, with its own Makefile pointing back at common/</text>
+
+            <!-- lines from common down to each project, showing sharing -->
+            <path d="M400,98 V190 H255 V158" stroke="#35618C" stroke-width="1.1" stroke-dasharray="3,3" fill="none"/>
+            <path d="M600,98 V190 H690 V158" stroke="#35618C" stroke-width="1.1" stroke-dasharray="3,3" fill="none"/>
+            <text x="330" y="205" font-size="10" fill="#35618C">both include common/common.mk</text>
+
+            <rect x="40" y="240" width="860" height="72" rx="6" fill="#fff" stroke="#D8DAD3"/>
+            <text x="56" y="260" font-weight="700" font-size="12">what makes this work: nothing here is hard-coded to one location</text>
+            <text x="56" y="278" font-size="10.5" fill="#5B6167">a project's Makefile computes its own path, then derives common/ and FreeRTOS/ relative to that -</text>
+            <text x="56" y="293" font-size="10.5" fill="#5B6167">so `make` behaves the same whether you run it from inside the project folder or point `-C` at it from anywhere</text>
+          </g>
+        </svg>
+      </figure>
+
+      <p>Two projects ship in the zip. <code>led-blink</code> is deliberately the simplest thing that can run on the board - one file, no RTOS, no library beyond what's in <code>common/</code>. <code>three-thread-blink</code> is the same board with FreeRTOS linked in directly from source, running three independent tasks.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="common">
+      <div class="topic-head"><span class="topic-num">2</span><h2>Inside common/</h2></div>
+      <p>Four files, and both projects use every one of them unmodified. This is the only code in the whole workspace that talks to hardware registers or the linker directly - everything in a project folder is ordinary C.</p>
+
+      <h3 id="startup"><span class="file">startup_stm32f103.s</span></h3>
+      <p>Two jobs: lay out the interrupt vector table at the very start of flash, and provide <code>Reset_Handler</code> - the first code the CPU ever runs.</p>
+
+      <div class="listing">
+        <p class="fname">common/startup_stm32f103.s - vector table (excerpt)</p>
+        <pre><code>g_pfnVectorTable:
+    .word _estack               <span class="cm">; initial stack pointer - from the linker script</span>
+    .word Reset_Handler         <span class="cm">; entry 1: where execution begins</span>
+    .word NMI_Handler
+    .word HardFault_Handler
+    <span class="cm">; ... core ARMv7-M exceptions ...</span>
+    .word SVC_Handler
+    .word DebugMon_Handler
+    .word PendSV_Handler
+    .word SysTick_Handler
+    <span class="cm">; --- STM32F103 peripheral interrupts, RM0008 Table 63 ---</span>
+    .word WWDG_IRQHandler        <span class="cm">; IRQ 0</span>
+    .word PVD_IRQHandler         <span class="cm">; IRQ 1</span>
+    <span class="cm">; ... through IRQ 42 (USBWakeUp) ...</span></code></pre>
+      </div>
+
+      <p><span class="rmnote">RM0008 Table 63</span> is exactly where that peripheral ordering comes from - the vector table is positional, so <code>TIM2_IRQHandler</code> has to sit at word offset 28 from the table's start or the hardware will jump to the wrong place the moment TIM2 fires. The first sixteen entries (stack pointer through <code>SysTick_Handler</code>) aren't STM32-specific at all - they're defined by the ARMv7-M architecture itself and are identical on every Cortex-M3 part from any vendor.</p>
+
+      <p>Every one of those handler names is declared <code>.weak</code>, aliased to a do-nothing <code>Default_Handler</code>:</p>
+
+      <div class="listing">
+        <p class="fname">common/startup_stm32f103.s - Reset_Handler + weak defaults</p>
+        <pre><code>Reset_Handler:
+    <span class="cm">; copy .data's initial values out of flash into RAM</span>
+    ldr r0, =_sidata
+    ldr r1, =_sdata
+    ldr r2, =_edata
+copy_data_loop:
+    cmp r1, r2
+    bcs copy_data_done
+    ldr r3, [r0], #4
+    str r3, [r1], #4
+    b copy_data_loop
+copy_data_done:
+
+    <span class="cm">; zero-fill .bss</span>
+    ldr r1, =_sbss
+    ldr r2, =_ebss
+    movs r3, #0
+zero_bss_loop:
+    cmp r1, r2
+    bcs zero_bss_done
+    str r3, [r1], #4
+    b zero_bss_loop
+zero_bss_done:
+
+    bl main
+loop_forever:
+    b loop_forever
+
+Default_Handler:
+    b .                          <span class="cm">; nothing plugged in? spin here, forever</span>
+
+    .macro def_weak name
+    .weak \name
+    .thumb_set \name, Default_Handler
+    .endm
+    def_weak NMI_Handler
+    def_weak SVC_Handler
+    def_weak PendSV_Handler
+    def_weak SysTick_Handler
+    <span class="cm">; ... one def_weak per vector table entry ...</span></code></pre>
+      </div>
+
+      <p>That weakness is what lets the same file serve both projects. <code>led-blink</code> defines its own <code>SysTick_Handler</code> and nothing else - everything else quietly falls back to <code>Default_Handler</code>. <code>three-thread-blink</code> pulls in FreeRTOS's port layer, which supplies strong definitions of <code>SVC_Handler</code>, <code>PendSV_Handler</code>, and <code>SysTick_Handler</code> that override the weak ones automatically at link time. <code>startup_stm32f103.s</code> itself never changes - and never needs to know FreeRTOS exists.</p>
+
+      <h3 id="linker"><span class="file">stm32f103.ld</span></h3>
+      <p>Tells the linker where flash and RAM actually are, and how to lay out the sections that come out of compilation.</p>
+
+      <div class="listing">
+        <p class="fname">common/stm32f103.ld</p>
+        <pre><code>ENTRY(Reset_Handler)
+
+MEMORY
+{
+    FLASH (rx)  : ORIGIN = 0x08000000, LENGTH = 64K
+    RAM   (rwx) : ORIGIN = 0x20000000, LENGTH = 20K
+}
+
+_estack = ORIGIN(RAM) + LENGTH(RAM);   <span class="cm">; top of RAM = initial SP</span>
+
+SECTIONS
+{
+    .isr_vector : { KEEP(*(.isr_vector)) } >FLASH
+    .text       : { *(.text*) *(.rodata*) } >FLASH
+
+    .data :
+    {
+        _sdata = .;
+        *(.data*)
+        _edata = .;
+    } >RAM AT> FLASH                    <span class="cm">; lives in RAM, initial values stored in FLASH</span>
+
+    _sidata = LOADADDR(.data);          <span class="cm">; where Reset_Handler copies FROM</span>
+
+    .bss : { _sbss = .; *(.bss*) *(COMMON) _ebss = .; } >RAM
+}</code></pre>
+      </div>
+
+      <p>The 64K / 20K figures are the STM32F103C8T6 datasheet's numbers for this specific part - not something derived from the reference manual, which covers the whole F101/102/103/105/107 family across many flash/RAM sizes. Every symbol with a leading underscore here (<code>_estack</code>, <code>_sidata</code>, <code>_sdata</code>, <code>_edata</code>, <code>_sbss</code>, <code>_ebss</code>) is what <code>Reset_Handler</code>, above, reads to do its copy-and-zero work - the startup file and the linker script are two halves of the same mechanism, and they agree on these names by convention, not by any automatic check.</p>
+
+      <h3 id="regs"><span class="file">stm32f103_regs.h</span></h3>
+      <p>The only register definitions anywhere in this workspace - just enough to drive what these two projects actually touch.</p>
+
+      <table>
+        <thead><tr><th>Peripheral</th><th>Base address</th><th>Source</th></tr></thead>
+        <tbody>
+          <tr><td>RCC</td><td class="reg">0x4002&#8203;1000</td><td><span class="rmnote">RM0008 §7</span> Reset and Clock Control registers</td></tr>
+          <tr><td>GPIOA / B / C</td><td class="reg">0x4001&#8203;0800 / 0C00 / 1000</td><td><span class="rmnote">RM0008 §9</span> General-purpose I/O, the F1 CRL/CRH style</td></tr>
+          <tr><td>SysTick</td><td class="reg">0xE000&#8203;E010</td><td>ARMv7-M Architecture Reference Manual - a core peripheral, same address on every Cortex-M3</td></tr>
+        </tbody>
+      </table>
+
+      <p>The GPIO layout is worth calling out because it trips people up coming from newer STM32 families: F1 doesn't have the single <code>MODER</code> register later families use. Each pin gets a 4-bit field - two bits <code>MODE</code>, two bits <code>CNF</code> - split across two registers, pins 0-7 in <code>CRL</code> and pins 8-15 in <code>CRH</code>. That's exactly what <code>GPIO_CNF_MODE_OUTPUT_PP_2MHZ</code> (<code>0x2</code>) encodes, and why the code you'll see in both projects has to pick <code>CRL</code> or <code>CRH</code> based on which half the pin number falls into.</p>
+
+      <h3 id="commonmk"><span class="file">common.mk</span></h3>
+      <p>Not hardware-facing at all - this is the actual build logic, and it's the same for every project regardless of whether FreeRTOS is involved.</p>
+
+      <div class="listing">
+        <p class="fname">common/common.mk (trimmed)</p>
+        <pre><code>MCU_FLAGS = -mcpu=cortex-m3 -mthumb
+
+CFLAGS  = $(MCU_FLAGS) -std=gnu11 -Os -g3 -Wall -Wextra
+CFLAGS += -ffunction-sections -fdata-sections
+CFLAGS += -I$(COMMON_DIR)
+CFLAGS += $(EXTRA_CFLAGS)              <span class="cm">; a project adds its own include paths here</span>
+
+LDFLAGS  = $(MCU_FLAGS)
+LDFLAGS += --specs=nano.specs --specs=nosys.specs
+LDFLAGS += -nostartfiles -Wl,--gc-sections
+LDFLAGS += -T$(LDSCRIPT)
+
+ALLSRCS := $(SRCS) $(STARTUP)          <span class="cm">; every project gets startup.s appended automatically</span>
+OBJS    := $(addprefix $(BUILD_DIR)/,$(notdir $(ALLSRCS)))
+OBJS    := $(OBJS:.c=.o)
+OBJS    := $(OBJS:.s=.o)
+vpath %.c $(sort $(dir $(ALLSRCS)))    <span class="cm">; lets make find sources wherever they actually live</span>
+vpath %.s $(sort $(dir $(ALLSRCS)))
+
+$(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -MMD -MP -c $&lt; -o $@
+
+$(BUILD_DIR)/$(PROJECT).elf: $(OBJS)
+	$(CC) $(OBJS) $(LDFLAGS) -o $@</code></pre>
+      </div>
+
+      <p>A project's own Makefile only ever sets three things - <code>PROJECT</code>, <code>SRCS</code>, and optionally <code>EXTRA_CFLAGS</code> - then includes this file. The <code>vpath</code> lines are what make that work even when <code>SRCS</code> points at files deep inside <code>FreeRTOS/</code>: object files always land in this project's own <code>build/</code>, named by basename only, regardless of how far away the source actually lives.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="ledblink">
+      <div class="topic-head"><span class="topic-num">3</span><h2>led-blink/</h2></div>
+      <p>No RTOS, no heap, one source file. The onboard LED on PC13 toggles every 500&nbsp;ms, timed by polling a millisecond counter that SysTick increments in the background.</p>
+
+      <h3><span class="file">Makefile</span></h3>
+      <div class="listing">
+        <p class="fname">led-blink/Makefile - complete</p>
+        <pre><code>ROOT_DIR := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
+PROJECT  := led-blink
+
+SRCS := main.c
+
+include $(ROOT_DIR)/common/common.mk</code></pre>
+      </div>
+      <p>That's the entire file. <code>ROOT_DIR</code> is computed from the Makefile's own path rather than assumed, so it's correct whether you <code>cd</code> into <code>led-blink/</code> and run <code>make</code>, or run <code>make -C led-blink</code> from the workspace root.</p>
+
+      <h3><span class="file">main.c</span></h3>
+      <div class="listing">
+        <p class="fname">led-blink/main.c - complete</p>
+        <pre><code><span class="kw">#include</span> &lt;stdint.h&gt;
+<span class="kw">#include</span> "stm32f103_regs.h"
+
+<span class="kw">static volatile</span> uint32_t g_msticks;
+
+<span class="kw">void</span> SysTick_Handler(<span class="kw">void</span>)
+{
+    g_msticks++;                                <span class="cm">// (1) fires 1000x/sec, see below</span>
+}
+
+<span class="kw">static void</span> delay_ms(uint32_t ms)
+{
+    uint32_t target = g_msticks + ms;
+    <span class="kw">while</span> (g_msticks &lt; target) { }               <span class="cm">// (2) busy-wait, nothing else runs</span>
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    RCC-&gt;APB2ENR |= RCC_APB2ENR_IOPCEN;         <span class="cm">// (3) power up GPIOC</span>
+
+    GPIOC-&gt;CRH &amp;= ~(0xFU &lt;&lt; 20);                <span class="cm">// (4) clear PC13's 4-bit field</span>
+    GPIOC-&gt;CRH |=  (GPIO_CNF_MODE_OUTPUT_PP_2MHZ &lt;&lt; 20);  <span class="cm">// output, push-pull, 2 MHz</span>
+
+    SYSTICK-&gt;LOAD = (8000000U / 1000U) - 1U;    <span class="cm">// (5) 8 MHz HSI / 1000 Hz tick</span>
+    SYSTICK-&gt;VAL  = 0;
+    SYSTICK-&gt;CTRL = SYSTICK_CTRL_CLKSOURCE
+                  | SYSTICK_CTRL_TICKINT
+                  | SYSTICK_CTRL_ENABLE;
+
+    <span class="kw">for</span> (;;) {
+        GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);                <span class="cm">// (6) toggle PC13</span>
+        delay_ms(500);
+    }
+}</code></pre>
+      </div>
+
+      <ol class="steps">
+        <li><strong>The tick source.</strong> <code>SysTick_Handler</code> overrides the weak default in <code>startup_stm32f103.s</code> by name alone - nothing links it explicitly. It just increments a counter; that's the entire ISR.</li>
+        <li><strong>The delay.</strong> A plain spin-loop on that counter. No sleep, no low-power wait - the core is busy the whole 500&nbsp;ms, which is fine here and would be the first thing to fix in anything power-sensitive.</li>
+        <li><strong>Clocking on the peripheral.</strong> <span class="rmnote">RM0008 §7.3.7</span> - <code>RCC_APB2ENR</code>, bit 4 (<code>IOPCEN</code>). Every GPIO port is clock-gated at reset; nothing on it responds until this bit is set.</li>
+        <li><strong>Pin configuration.</strong> <span class="rmnote">RM0008 §9.2.2</span> - <code>GPIOx_CRH</code> covers pins 8-15, four bits each. PC13's field sits at bits 20-23 (<code>(13-8)&times;4</code>), which is exactly why the code shifts by <code>20</code>.</li>
+        <li><strong>Timer setup.</strong> ARMv7-M Architecture Reference Manual, SysTick. <code>LOAD</code> is a count-down-from value, so <code>8,000,000 / 1000 - 1</code> gives a reload that fires once per millisecond at the default 8&nbsp;MHz HSI clock this whole workspace assumes (no PLL is configured anywhere).</li>
+        <li><strong>The visible effect.</strong> A read-modify-write XOR on <code>ODR</code>. PC13 is wired active-low on the Bluepill, so this still blinks correctly - XOR doesn't care which polarity is "on."</li>
+      </ol>
+
+      <h3>Build and flash</h3>
+      <ol class="steps">
+        <li><strong>Build.</strong> <code>cd led-blink &amp;&amp; make</code> - produces <code>build/led-blink.elf</code>, <code>.bin</code>, and <code>.hex</code>, and prints a <code>size</code> summary. No FreeRTOS clone needed for this one.</li>
+        <li><strong>Flash.</strong> <code>make flash</code>, which runs <code>st-flash write build/led-blink.bin 0x8000000</code> against an ST-Link. If you don't have <code>st-flash</code>, any tool that writes a raw binary to <code>0x08000000</code> works identically - OpenOCD, or the <code>.hex</code> via a different programmer.</li>
+        <li><strong>Confirm.</strong> The onboard LED should start blinking roughly twice a second the moment the write finishes and the board resets.</li>
+      </ol>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="threethread">
+      <div class="topic-head"><span class="topic-num">4</span><h2>three-thread-blink/</h2></div>
+      <p>Same board, same register header, same startup file and linker script - the only thing that changes is that FreeRTOS's own source now sits in the build, and three tasks run instead of one <code>main()</code> loop.</p>
+
+      <h3><span class="file">Makefile</span></h3>
+      <div class="listing">
+        <p class="fname">three-thread-blink/Makefile - complete</p>
+        <pre><code>ROOT_DIR     := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
+PROJECT      := three-thread-blink
+
+FREERTOS_DIR := $(ROOT_DIR)/FreeRTOS
+
+SRCS := main.c
+SRCS += $(FREERTOS_DIR)/tasks.c
+SRCS += $(FREERTOS_DIR)/list.c
+SRCS += $(FREERTOS_DIR)/queue.c
+SRCS += $(FREERTOS_DIR)/portable/GCC/ARM_CM3/port.c
+SRCS += $(FREERTOS_DIR)/portable/MemMang/heap_4.c
+<span class="cm"># timers.c intentionally omitted - configUSE_TIMERS is 0 below</span>
+
+EXTRA_CFLAGS := -I$(FREERTOS_DIR)/include
+EXTRA_CFLAGS += -I$(FREERTOS_DIR)/portable/GCC/ARM_CM3
+EXTRA_CFLAGS += -I.
+
+include $(ROOT_DIR)/common/common.mk</code></pre>
+      </div>
+      <p>Five extra source files, in total: the scheduler core (<code>tasks.c</code>), the linked-list implementation the ready/delayed lists are built from (<code>list.c</code>), queues/semaphores (<code>queue.c</code>), the Cortex-M3 port layer (<code>port.c</code>), and one heap implementation (<code>heap_4.c</code>). <code>EXTRA_CFLAGS</code> adds two FreeRTOS include directories plus <code>-I.</code>, the last of which is what lets <code>port.c</code> find this project's own <code>FreeRTOSConfig.h</code> - FreeRTOS has no fixed idea where that file lives; it's found purely through the include path.</p>
+
+      <h3><span class="file">FreeRTOSConfig.h</span></h3>
+      <div class="listing">
+        <p class="fname">three-thread-blink/FreeRTOSConfig.h (trimmed)</p>
+        <pre><code><span class="cm">// no PLL is configured anywhere in this workspace - must match reality</span>
+<span class="kw">#define</span> configCPU_CLOCK_HZ              8000000UL
+<span class="kw">#define</span> configTICK_RATE_HZ              1000
+<span class="kw">#define</span> configMAX_PRIORITIES            5
+<span class="kw">#define</span> configTOTAL_HEAP_SIZE           (4 * 1024)   <span class="cm">// Bluepill: 20K RAM total</span>
+<span class="kw">#define</span> configCHECK_FOR_STACK_OVERFLOW  2
+
+<span class="cm">// Cortex-M3 NVIC priority config (ARM_CM3 port)</span>
+<span class="kw">#define</span> configPRIO_BITS                 4
+<span class="kw">#define</span> configKERNEL_INTERRUPT_PRIORITY \
+    (configLIBRARY_LOWEST_INTERRUPT_PRIORITY &lt;&lt; (8 - configPRIO_BITS))
+
+<span class="cm">// bridges this project's startup.s vector names to FreeRTOS's own</span>
+<span class="kw">#define</span> vPortSVCHandler      SVC_Handler
+<span class="kw">#define</span> xPortPendSVHandler   PendSV_Handler
+<span class="kw">#define</span> xPortSysTickHandler  SysTick_Handler</code></pre>
+      </div>
+
+      <p><code>configCPU_CLOCK_HZ</code> is the one value most likely to bite you if this workspace is ever extended to run at 72&nbsp;MHz via the PLL - it's a plain number FreeRTOS trusts completely, not something it reads from hardware. <code>configPRIO_BITS</code> is 4 because that's how many priority bits the STM32F1's NVIC actually implements in silicon; getting this wrong doesn't fail to compile, it just makes priority-based interrupt masking silently target the wrong bits. And the last three lines are the exact mechanism this workspace uses to connect <code>startup_stm32f103.s</code>'s generic, FreeRTOS-agnostic vector table to FreeRTOS's real handlers - the preprocessor renames <code>port.c</code>'s functions to the CMSIS-style names the vector table already expects, so the weak defaults in <code>startup.s</code> get overridden automatically at link time.</p>
+
+      <h3><span class="file">main.c</span></h3>
+      <div class="listing">
+        <p class="fname">three-thread-blink/main.c - complete</p>
+        <pre><code><span class="kw">#include</span> "stm32f103_regs.h"
+<span class="kw">#include</span> "FreeRTOS.h"
+<span class="kw">#include</span> "task.h"
+
+<span class="kw">typedef struct</span> {
+    GPIO_TypeDef *port;
+    uint32_t      pin;
+    uint32_t      period_ms;
+} led_task_args_t;
+
+<span class="kw">static const</span> led_task_args_t led_a = { GPIOC, 13, 1000 };  <span class="cm">// onboard LED</span>
+<span class="kw">static const</span> led_task_args_t led_b = { GPIOA, 0,  2000 };  <span class="cm">// external</span>
+<span class="kw">static const</span> led_task_args_t led_c = { GPIOA, 1,  3000 };  <span class="cm">// external</span>
+
+<span class="kw">static void</span> gpio_output_init(GPIO_TypeDef *port, uint32_t pin)
+{
+    <span class="kw">volatile</span> uint32_t *cr = (pin &lt; 8) ? &amp;port-&gt;CRL : &amp;port-&gt;CRH;
+    uint32_t shift = (pin % 8U) * 4U;
+    *cr &amp;= ~(0xFU &lt;&lt; shift);
+    *cr |=  (GPIO_CNF_MODE_OUTPUT_PP_2MHZ &lt;&lt; shift);
+}
+
+<span class="kw">static void</span> led_task(<span class="kw">void</span> *pvParameters)
+{
+    <span class="kw">const</span> led_task_args_t *args = (<span class="kw">const</span> led_task_args_t *)pvParameters;
+    <span class="kw">for</span> (;;) {
+        args-&gt;port-&gt;ODR ^= (1U &lt;&lt; args-&gt;pin);
+        vTaskDelay(pdMS_TO_TICKS(args-&gt;period_ms));      <span class="cm">// Blocked, not spinning</span>
+    }
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    RCC-&gt;APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN;
+
+    gpio_output_init(led_a.port, led_a.pin);
+    gpio_output_init(led_b.port, led_b.pin);
+    gpio_output_init(led_c.port, led_c.pin);
+
+    xTaskCreate(led_task, "led_1s", configMINIMAL_STACK_SIZE, (<span class="kw">void</span> *)&amp;led_a, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_2s", configMINIMAL_STACK_SIZE, (<span class="kw">void</span> *)&amp;led_b, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_3s", configMINIMAL_STACK_SIZE, (<span class="kw">void</span> *)&amp;led_c, tskIDLE_PRIORITY + 1, NULL);
+
+    vTaskStartScheduler();       <span class="cm">// never returns unless setup failed</span>
+    <span class="kw">for</span> (;;) { }
+}
+
+<span class="cm">// required: configCHECK_FOR_STACK_OVERFLOW is 2</span>
+<span class="kw">void</span> vApplicationStackOverflowHook(TaskHandle_t xTask, <span class="kw">char</span> *pcTaskName)
+{
+    (<span class="kw">void</span>)xTask; (<span class="kw">void</span>)pcTaskName;
+    <span class="kw">for</span> (;;) { }
+}</code></pre>
+      </div>
+
+      <p>One function, <code>led_task</code>, runs three times with three different arguments - the same pattern as passing a struct pointer to a pthread in any hosted OS. <code>gpio_output_init</code> reuses the exact CRL/CRH logic from <code>led-blink</code>, generalized to pick the right register from the pin number. The one behavioral difference from <code>led-blink</code> that matters most: <code>vTaskDelay</code> puts the calling task into the <em>Blocked</em> state rather than spinning, so the other two tasks (and the idle task) get the core while any one of them is waiting out its period.</p>
+
+      <p>PC13 is the only LED actually on the board - PA0 and PA1 need an external LED and a current-limiting resistor (around 330&#8202;&#937;) to ground each, or you can point <code>led_b</code>/<code>led_c</code> at <code>GPIOC, 13</code> too and watch all three periods XOR the one onboard LED instead.</p>
+
+      <h3>Compiling and linking with FreeRTOS</h3>
+      <p>Nothing here is conceptually different from any other multi-file C build - it's worth seeing laid out once, though, since it's the same shape every time FreeRTOS gets linked into a project like this one.</p>
+
+      <figure>
+        <svg viewBox="0 0 1060 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="build-t">
+          <title id="build-t">Compilation and linking pipeline for three-thread-blink</title>
+          <defs><marker id="bm" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker></defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+
+            <text x="10" y="20" font-weight="700" font-size="12.5">sources</text>
+            <!-- project sources (blue) -->
+            <rect x="10" y="32" width="200" height="30" rx="5" fill="#EAF1F8" stroke="#35618C"/><text x="24" y="52">main.c</text>
+            <rect x="10" y="68" width="200" height="30" rx="5" fill="#EAF1F8" stroke="#35618C"/><text x="24" y="88">FreeRTOSConfig.h *</text>
+            <text x="10" y="112" font-size="9.5" fill="#9198A0">* header only - included, not compiled alone</text>
+
+            <!-- freertos sources (amber) -->
+            <rect x="10" y="128" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="148">FreeRTOS/tasks.c</text>
+            <rect x="10" y="162" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="182">FreeRTOS/list.c</text>
+            <rect x="10" y="196" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="216">FreeRTOS/queue.c</text>
+            <rect x="10" y="230" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="250">.../ARM_CM3/port.c</text>
+            <rect x="10" y="264" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="284">.../MemMang/heap_4.c</text>
+
+            <!-- common sources (grey) -->
+            <rect x="10" y="300" width="200" height="30" rx="5" fill="#F3F4F0" stroke="#9198A0"/><text x="24" y="320">common/startup_stm32f103.s</text>
+
+            <!-- arrows to compiler -->
+            <path d="M210,47 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+            <path d="M210,143 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+            <path d="M210,177 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+            <path d="M210,211 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+            <path d="M210,245 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+            <path d="M210,279 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+            <path d="M210,315 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+
+            <rect x="290" y="20" width="220" height="310" rx="8" fill="#fff" stroke="#1E2125" stroke-width="1.4"/>
+            <text x="400" y="44" text-anchor="middle" font-weight="700">arm-none-eabi-gcc</text>
+            <text x="400" y="60" text-anchor="middle" font-size="10" fill="#5B6167">compiles each file separately</text>
+            <text x="400" y="76" text-anchor="middle" font-size="10" fill="#5B6167">-c, one .o per .c or .s</text>
+            <text x="400" y="100" text-anchor="middle" font-size="10.5" fill="#35618C">sees FreeRTOSConfig.h via -I.</text>
+            <text x="400" y="118" text-anchor="middle" font-size="10.5" fill="#35618C">(FreeRTOS/port.c needs it directly)</text>
+
+            <rect x="330" y="150" width="140" height="150" rx="6" fill="#F3F4F0" stroke="#D8DAD3" stroke-dasharray="3,3"/>
+            <text x="400" y="170" text-anchor="middle" font-size="10" fill="#9198A0">build/*.o</text>
+            <text x="400" y="188" text-anchor="middle" font-size="10" fill="#9198A0">main.o</text>
+            <text x="400" y="204" text-anchor="middle" font-size="10" fill="#9198A0">tasks.o</text>
+            <text x="400" y="220" text-anchor="middle" font-size="10" fill="#9198A0">list.o</text>
+            <text x="400" y="236" text-anchor="middle" font-size="10" fill="#9198A0">queue.o</text>
+            <text x="400" y="252" text-anchor="middle" font-size="10" fill="#9198A0">port.o</text>
+            <text x="400" y="268" text-anchor="middle" font-size="10" fill="#9198A0">heap_4.o</text>
+            <text x="400" y="284" text-anchor="middle" font-size="10" fill="#9198A0">startup_stm32f103.o</text>
+
+            <path d="M510,175 H590" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+
+            <rect x="590" y="20" width="220" height="310" rx="8" fill="#fff" stroke="#1E2125" stroke-width="1.4"/>
+            <text x="700" y="44" text-anchor="middle" font-weight="700">arm-none-eabi-gcc</text>
+            <text x="700" y="60" text-anchor="middle" font-size="10" fill="#5B6167">(as the linker driver)</text>
+            <text x="700" y="84" text-anchor="middle" font-size="10.5">resolves symbols across ALL .o files</text>
+            <text x="700" y="102" text-anchor="middle" font-size="10.5" fill="#A05A2C">weak SVC/PendSV/SysTick_Handler</text>
+            <text x="700" y="118" text-anchor="middle" font-size="10.5" fill="#A05A2C">lose to port.o's strong ones</text>
+            <text x="700" y="142" text-anchor="middle" font-size="10.5">discards unused code</text>
+            <text x="700" y="158" text-anchor="middle" font-size="9.5" fill="#5B6167">(--gc-sections, per function/data)</text>
+
+            <rect x="620" y="180" width="160" height="60" rx="6" fill="#EAF1F8" stroke="#35618C"/>
+            <text x="700" y="202" text-anchor="middle" font-size="10.5" font-weight="700">-T stm32f103.ld</text>
+            <text x="700" y="220" text-anchor="middle" font-size="9.5" fill="#35618C">tells it FLASH/RAM addresses</text>
+            <text x="700" y="234" text-anchor="middle" font-size="9.5" fill="#35618C">and section placement</text>
+
+            <path d="M810,175 H890" stroke="#9198A0" stroke-width="1.1" marker-end="url(#bm)"/>
+
+            <rect x="890" y="60" width="150" height="60" rx="7" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+            <text x="965" y="86" text-anchor="middle" font-weight="700">.elf</text>
+            <text x="965" y="102" text-anchor="middle" font-size="9.5" fill="#2E7D5B">full debug info</text>
+
+            <path d="M965,120 V150" stroke="#2E7D5B" stroke-width="1.1" marker-end="url(#bm)"/>
+            <text x="970" y="140" font-size="9.5" fill="#2E7D5B">objcopy</text>
+
+            <rect x="890" y="150" width="150" height="50" rx="7" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+            <text x="965" y="172" text-anchor="middle" font-weight="700">.bin</text>
+            <text x="965" y="188" text-anchor="middle" font-size="9.5" fill="#2E7D5B">the image you flash</text>
+
+            <rect x="890" y="212" width="150" height="50" rx="7" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+            <text x="965" y="234" text-anchor="middle" font-weight="700">.hex</text>
+            <text x="965" y="250" text-anchor="middle" font-size="9.5" fill="#2E7D5B">an alternate format</text>
+
+            <text x="10" y="380" font-size="12" fill="#5B6167">Same pipeline runs for led-blink too - just with one source file</text>
+            <text x="10" y="398" font-size="12" fill="#5B6167">instead of seven, and nothing amber in the picture.</text>
+          </g>
+        </svg>
+        <figcaption>Every .c and .s file is compiled independently and knows nothing about the others - all the cross-file wiring (the weak-symbol override, the memory layout) happens once, at the link step.</figcaption>
+      </figure>
+
+      <h3>Build and flash</h3>
+      <ol class="steps">
+        <li><strong>Get FreeRTOS.</strong> This project's <code>SRCS</code> point at <code>../FreeRTOS/...</code>, which isn't in the zip - clone it once at the workspace root: <code>git clone --depth 1 https://github.com/FreeRTOS/FreeRTOS-Kernel.git FreeRTOS</code> (run from inside <code>stm32f103/</code>).</li>
+        <li><strong>Build.</strong> <code>cd three-thread-blink &amp;&amp; make</code>. This compiles all seven sources shown above and links them into <code>build/three-thread-blink.elf</code>/<code>.bin</code>/<code>.hex</code>, then prints a <code>size</code> summary - expect a few KB of flash and a few KB of RAM, comfortably inside the F103C8's 64K/20K.</li>
+        <li><strong>Flash.</strong> <code>make flash</code> - identical mechanism to <code>led-blink</code>, <code>st-flash write build/three-thread-blink.bin 0x8000000</code>.</li>
+        <li><strong>Confirm.</strong> PC13 blinks once a second on its own; wire up PA0/PA1 (or repoint them at PC13, see above) to see the 2&nbsp;s and 3&nbsp;s tasks running independently of it.</li>
+      </ol>
+
+      <p class="aside"><b>If it doesn't link.</b> The most common first-time failure here is <code>fatal error: FreeRTOSConfig.h: No such file or directory</code> from inside <code>port.c</code> - that means <code>-I.</code> isn't reaching the compiler, usually because <code>make</code> was run from somewhere other than <code>three-thread-blink/</code> itself. The second most common is an undefined reference to something in <code>FreeRTOS/</code> - almost always means the clone in step 1 didn't happen, or landed in the wrong place.</p>
+    </section>
+
+    <div class="footline">stm32f103 workspace notes &middot; RM0008: STM32F101/102/103/105/107 Reference Manual &middot; ARMv7-M Architecture Reference Manual</div>
+  </main>
+</div>
+</body>
+</html>

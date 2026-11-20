@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Management in FreeRTOS - a deeper pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --panel:   #F3F4F0;
+    --accent:  #35618C;
+    --accent-bg:#EAF1F8;
+    --run:     #2E7D5B;
+    --run-bg:  #E8F3ED;
+    --block:   #A05A2C;
+    --block-bg:#FAF0E6;
+    --purple:  #6E5A96;
+    --purple-bg:#EFEBF5;
+    --gold:    #A6871E;
+    --gold-bg: #F7F0DC;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+  a{ color:var(--accent); }
+
+  .layout{ max-width:1240px; margin:0 auto; display:flex; align-items:flex-start; }
+  .toc{ position:sticky; top:0; align-self:flex-start; width:240px; flex:0 0 240px; height:100vh; overflow-y:auto; padding:32px 16px 32px 26px; border-right:1px solid var(--rule); box-sizing:border-box; }
+  .toc-kicker{ font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); margin:0 0 14px; }
+  .toc ol{ list-style:none; margin:0; padding:0; counter-reset:toc; }
+  .toc li{ counter-increment:toc; margin-bottom:2px; }
+  .toc a{ display:flex; gap:9px; padding:6px 8px; border-radius:6px; color:var(--ink-soft); font-size:12.5px; text-decoration:none; line-height:1.35; }
+  .toc a:hover{ background:var(--accent-bg); color:var(--accent); }
+  .toc a::before{ content: counter(toc, decimal-leading-zero); font-family:var(--mono); font-size:10.5px; color:var(--ink-dim); padding-top:1px; }
+
+  main{ padding:56px 50px 110px; min-width:0; flex:1 1 auto; }
+  .cover{ margin-bottom:44px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:31px; font-weight:700; line-height:1.22; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17px; color:var(--ink-soft); max-width:70ch; margin:0 0 8px; }
+
+  p{ max-width:74ch; margin:0 0 16px; }
+  ul{ margin:0 0 16px; padding-left:22px; max-width:72ch; }
+  li{ margin-bottom:6px; }
+
+  section.topic{ padding-top:46px; border-top:1px solid var(--rule); scroll-margin-top:20px; }
+  section.topic:first-of-type{ border-top:none; }
+  .topic-head{ display:flex; align-items:baseline; gap:14px; margin-bottom:16px; }
+  .topic-num{ font-family:var(--mono); font-size:13px; color:var(--accent); background:var(--accent-bg); border-radius:5px; padding:3px 9px; flex:none; }
+  .topic-head h2{ font-size:22px; font-weight:700; margin:0; letter-spacing:-.01em; }
+
+  figure{ margin:20px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); margin-top:9px; max-width:78ch; }
+
+  table{ width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:14px; }
+  th,td{ text-align:left; padding:8px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); border-bottom:1.5px solid var(--ink); }
+
+  .aside{ border-left:2px solid var(--accent-bg); padding-left:16px; margin:18px 0; font-size:15px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+
+  .footline{ margin-top:56px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+
+  @media (max-width:900px){
+    .layout{ flex-direction:column; }
+    .toc{ width:100%; flex-basis:auto; position:relative; height:auto; border-right:none; border-bottom:1px solid var(--rule); }
+    main{ padding:36px 22px 80px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <nav class="toc" aria-label="Table of contents">
+    <p class="toc-kicker">contents</p>
+    <ol>
+      <li><a href="#twostate">Running vs. Not Running</a></li>
+      <li><a href="#fourstate">The full state machine</a></li>
+      <li><a href="#roundrobin">Equal-priority round robin</a></li>
+      <li><a href="#tick">The tick interrupt's role</a></li>
+      <li><a href="#starve">Unequal priorities</a></li>
+      <li><a href="#delay">Blocking instead of spinning</a></li>
+      <li><a href="#mixed">Mixing time-slicing and preemption</a></li>
+      <li><a href="#createdelete">Creating and deleting tasks</a></li>
+      <li><a href="#capstone">A busier system, end to end</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="cover">
+      <p class="byline">Original notes &middot; on the subject of FreeRTOS task management</p>
+      <h1>Task Management in FreeRTOS - a deeper pass</h1>
+      <p class="dek">Nine execution patterns, each built from scratch to explain one specific idea - how the scheduler actually decides, tick by tick, which task gets the core. Not sourced from, or a redrawing of, any published book's artwork.</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="twostate">
+      <div class="topic-head"><span class="topic-num">1</span><h2>Running vs. Not Running</h2></div>
+      <p>Before getting into all four states, the simplest possible view: at any instant, a task is either the one thing actually executing, or it isn't. Every other state - Ready, Blocked, Suspended - is just a different flavor of "not currently it."</p>
+
+      <figure>
+        <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="ts-t">
+          <title id="ts-t">Running versus the Not Running super-state</title>
+          <defs><marker id="m1" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#5B6167"/></marker></defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="13">
+            <rect x="30" y="60" width="220" height="90" rx="45" fill="#F3F4F0" stroke="#9198A0" stroke-width="1.4"/>
+            <rect x="42" y="72" width="196" height="66" rx="33" fill="#fff" stroke="#9198A0" stroke-width="1.1"/>
+            <text x="140" y="110" text-anchor="middle" font-weight="700">Not Running</text>
+            <text x="140" y="126" text-anchor="middle" font-size="9.5" fill="#5B6167">Ready, Blocked, or Suspended</text>
+
+            <path d="M255,90 H495" stroke="#2E7D5B" stroke-width="1.6" fill="none" marker-end="url(#m1)"/>
+            <path d="M495,120 H255" stroke="#5B6167" stroke-width="1.6" fill="none" marker-end="url(#m1)"/>
+            <text x="375" y="83" text-anchor="middle" font-size="9.5" fill="#2E7D5B">scheduler selects it</text>
+            <text x="375" y="140" text-anchor="middle" font-size="9.5" fill="#5B6167">stops running</text>
+
+            <rect x="500" y="60" width="220" height="90" rx="14" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.6"/>
+            <text x="610" y="112" text-anchor="middle" font-weight="700" fill="#1E2125">Running</text>
+          </g>
+        </svg>
+        <figcaption>Only one task in the entire system can be Running at a time (per core). Everything else, no matter how close to running it is, is Not Running.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="fourstate">
+      <div class="topic-head"><span class="topic-num">2</span><h2>The full state machine</h2></div>
+      <p>"Not Running" is really three distinct situations grouped under one umbrella. Ready means eligible right now; Blocked and Suspended are both forms of "not even eligible," for different reasons - a timeout that hasn't expired yet, versus removed from consideration entirely by another task's explicit request.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 480" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="fs-t">
+          <title id="fs-t">The four-state task model, with Ready, Blocked, and Suspended grouped as the Not Running super-state</title>
+          <defs><marker id="m2" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#5B6167"/></marker></defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+
+            <rect x="20" y="20" width="560" height="440" rx="18" fill="none" stroke="#9198A0" stroke-width="1.3" stroke-dasharray="5,4"/>
+            <text x="40" y="46" font-size="12.5" font-weight="700" fill="#5B6167">NOT RUNNING (super-state)</text>
+
+            <!-- Suspended top -->
+            <rect x="120" y="66" width="180" height="70" rx="10" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.4"/>
+            <text x="210" y="106" text-anchor="middle" font-weight="700">Suspended</text>
+
+            <!-- Ready center-left -->
+            <rect x="80" y="220" width="200" height="80" rx="10" fill="#EAF1F8" stroke="#35618C" stroke-width="1.6"/>
+            <text x="180" y="266" text-anchor="middle" font-weight="700" font-size="14">Ready</text>
+
+            <!-- Blocked bottom -->
+            <rect x="120" y="370" width="180" height="70" rx="10" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+            <text x="210" y="410" text-anchor="middle" font-weight="700">Blocked</text>
+
+            <!-- Running outside, right -->
+            <rect x="680" y="220" width="200" height="80" rx="10" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.8"/>
+            <text x="780" y="266" text-anchor="middle" font-weight="700" font-size="14">Running</text>
+
+            <!-- Ready <-> Running -->
+            <path d="M280,248 H676" stroke="#2E7D5B" stroke-width="1.6" fill="none" marker-end="url(#m2)"/>
+            <path d="M676,278 H280" stroke="#5B6167" stroke-width="1.6" fill="none" marker-end="url(#m2)"/>
+            <text x="478" y="240" text-anchor="middle" font-size="9.5" fill="#2E7D5B">scheduler picks it</text>
+            <text x="478" y="296" text-anchor="middle" font-size="9.5" fill="#5B6167">preempted / yields</text>
+
+            <!-- Ready -> Suspended, Suspended -> Ready -->
+            <path d="M195,220 V140" stroke="#6E5A96" stroke-width="1.4" fill="none" marker-end="url(#m2)"/>
+            <text x="130" y="180" font-size="9.5" fill="#6E5A96">vTaskSuspend()</text>
+            <path d="M225,140 V220" stroke="#6E5A96" stroke-width="1.4" fill="none" marker-end="url(#m2)"/>
+            <text x="232" y="180" font-size="9.5" fill="#6E5A96">vTaskResume()</text>
+
+            <!-- Ready -> Blocked, Blocked -> Ready -->
+            <path d="M225,300 V370" stroke="#5B6167" stroke-width="1.4" fill="none" marker-end="url(#m2)"/>
+            <text x="232" y="340" font-size="9.5" fill="#5B6167">blocking API called</text>
+            <path d="M195,370 V300" stroke="#A05A2C" stroke-width="1.4" fill="none" marker-end="url(#m2)"/>
+            <text x="105" y="340" font-size="9.5" fill="#A05A2C">event / timeout</text>
+
+            <!-- Running -> Suspended (bypass) -->
+            <path d="M760,220 C760,110 420,55 300,90" stroke="#6E5A96" stroke-width="1.3" fill="none" marker-end="url(#m2)" stroke-dasharray="4,3"/>
+            <text x="560" y="80" font-size="9.5" fill="#6E5A96">vTaskSuspend() - Running task suspends directly</text>
+
+            <!-- Running -> Blocked (bypass) -->
+            <path d="M760,300 C760,410 420,445 300,405" stroke="#A05A2C" stroke-width="1.3" fill="none" marker-end="url(#m2)" stroke-dasharray="4,3"/>
+            <text x="560" y="440" font-size="9.5" fill="#A05A2C">Running task calls a blocking API on itself</text>
+
+            <!-- entry point -->
+            <circle cx="40" cy="248" r="5" fill="#1E2125"/>
+            <path d="M45,248 H80" stroke="#1E2125" stroke-width="1.4" marker-end="url(#m2)"/>
+            <text x="10" y="270" font-size="9" fill="#5B6167">created</text>
+          </g>
+        </svg>
+        <figcaption>Every arrow is a specific API call or a specific event - nothing moves a task between states except one of these six triggers.</figcaption>
+      </figure>
+
+      <p class="aside"><b>Notice what's symmetric and what isn't.</b> Ready and Running trade places constantly, in both directions, many times a second. Suspended only ever exits back to Ready - never straight to Running - because <code>vTaskResume()</code> makes a task <em>eligible</em> again, it doesn't hand it the CPU on the spot.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="roundrobin">
+      <div class="topic-head"><span class="topic-num">3</span><h2>Equal-priority round robin</h2></div>
+      <p>The simplest real execution pattern: two tasks, same priority, each doing nothing to block or yield. The scheduler just alternates them, one tick period each.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rr-t">
+          <title id="rr-t">Two equal-priority tasks alternating every tick period</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+            <text x="10" y="24" font-weight="700">Task 1</text>
+            <text x="10" y="94" font-weight="700" fill="#2E7D5B">Task 2</text>
+            <g>
+              <rect x="120" y="8" width="130" height="24" fill="#35618C"/>
+              <rect x="380" y="8" width="130" height="24" fill="#35618C"/>
+              <rect x="640" y="8" width="130" height="24" fill="#35618C"/>
+              <rect x="250" y="78" width="130" height="24" fill="#2E7D5B"/>
+              <rect x="510" y="78" width="130" height="24" fill="#2E7D5B"/>
+              <rect x="770" y="78" width="130" height="24" fill="#2E7D5B"/>
+            </g>
+            <g stroke="#D8DAD3" stroke-dasharray="2,3">
+              <line x1="120" y1="0" x2="120" y2="150"/><line x1="250" y1="0" x2="250" y2="150"/>
+              <line x1="380" y1="0" x2="380" y2="150"/><line x1="510" y1="0" x2="510" y2="150"/>
+              <line x1="640" y1="0" x2="640" y2="150"/><line x1="770" y1="0" x2="770" y2="150"/>
+            </g>
+            <text x="120" y="170" text-anchor="middle" font-size="11">t1</text>
+            <text x="250" y="170" text-anchor="middle" font-size="11">t2</text>
+            <text x="380" y="170" text-anchor="middle" font-size="11">t3</text>
+            <text x="640" y="170" text-anchor="middle" font-size="11">t4</text>
+            <path d="M10,190 H890" stroke="#1E2125" stroke-width="1.3"/>
+            <path d="M880,183 L890,190 L880,197" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+            <text x="450" y="212" text-anchor="middle" font-size="11" fill="#5B6167">Time</text>
+          </g>
+        </svg>
+        <figcaption>At t1, Task 1 enters Running and executes until t2. At t2 Task 2 enters Running and executes until t3, at which point Task 1 re-enters Running - and so on, indefinitely.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="tick">
+      <div class="topic-head"><span class="topic-num">4</span><h2>The tick interrupt's role</h2></div>
+      <p>The switch in the diagram above isn't instantaneous or free - it's the kernel itself, briefly running inside a tick interrupt, deciding who goes next.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tk-t">
+          <title id="tk-t">The kernel running briefly inside the tick interrupt to choose the next task</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+            <text x="10" y="24" font-weight="700" fill="#A05A2C">Kernel</text>
+            <text x="10" y="94" font-weight="700">Task 1</text>
+            <text x="10" y="164" font-weight="700" fill="#2E7D5B">Task 2</text>
+
+            <rect x="120" y="8" width="440" height="20" fill="#F3F4F0"/>
+            <rect x="120" y="78" width="130" height="20" fill="#35618C"/>
+            <rect x="530" y="78" width="130" height="20" fill="#35618C"/>
+            <rect x="250" y="148" width="280" height="20" fill="#2E7D5B"/>
+
+            <!-- kernel spikes at t2 and t3 -->
+            <rect x="248" y="0" width="4" height="36" fill="#A05A2C"/>
+            <rect x="528" y="0" width="4" height="36" fill="#A05A2C"/>
+
+            <g stroke="#D8DAD3" stroke-dasharray="2,3">
+              <line x1="120" y1="0" x2="120" y2="200"/><line x1="250" y1="0" x2="250" y2="200"/><line x1="530" y1="0" x2="530" y2="200"/>
+            </g>
+            <text x="120" y="218" text-anchor="middle" font-size="11">t1</text>
+            <text x="250" y="218" text-anchor="middle" font-size="11">t2</text>
+            <text x="530" y="218" text-anchor="middle" font-size="11">t3</text>
+            <path d="M10,235 H890" stroke="#1E2125" stroke-width="1.3"/>
+            <path d="M880,228 L890,235 L880,242" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+
+            <path d="M250,45 L250,20" stroke="#A05A2C" stroke-width="1.2" fill="none"/>
+            <text x="260" y="52" font-size="10" fill="#A05A2C">tick interrupt occurs -&gt; kernel runs -&gt; selects Task 2 -&gt;</text>
+            <text x="260" y="66" font-size="10" fill="#A05A2C">Task 2 runs once the tick interrupt completes</text>
+          </g>
+        </svg>
+        <figcaption>The kernel's own execution is real but brief - two narrow amber slivers, not a visible block of time like either task gets.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="starve">
+      <div class="topic-head"><span class="topic-num">5</span><h2>Unequal priorities</h2></div>
+      <p>Change one thing - give Task 2 a higher priority than Task 1 - and the pattern above stops being an alternation at all. The tick interrupt still runs every time, but it keeps choosing the same task.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="st-t">
+          <title id="st-t">Task 2, at higher priority, remains Running indefinitely while Task 1 never runs</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+            <text x="10" y="24" font-weight="700">Task 1 (low)</text>
+            <text x="10" y="94" font-weight="700" fill="#2E7D5B">Task 2 (high)</text>
+
+            <rect x="120" y="8" width="770" height="20" fill="#F3F4F0"/>
+            <text x="500" y="22" text-anchor="middle" font-size="10" fill="#9198A0">never enters Running - always Ready, waiting</text>
+            <rect x="120" y="78" width="770" height="20" fill="#2E7D5B"/>
+
+            <rect x="248" y="0" width="4" height="106" fill="#A05A2C"/>
+            <rect x="530" y="0" width="4" height="106" fill="#A05A2C"/>
+            <g stroke="#D8DAD3" stroke-dasharray="2,3">
+              <line x1="120" y1="0" x2="120" y2="150"/><line x1="250" y1="0" x2="250" y2="150"/><line x1="530" y1="0" x2="530" y2="150"/>
+            </g>
+            <text x="120" y="170" text-anchor="middle" font-size="11">t1</text>
+            <text x="250" y="170" text-anchor="middle" font-size="11">t2</text>
+            <text x="530" y="170" text-anchor="middle" font-size="11">t3</text>
+            <path d="M10,190 H890" stroke="#1E2125" stroke-width="1.3"/>
+            <path d="M880,183 L890,190 L880,197" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+          </g>
+        </svg>
+        <figcaption>The tick interrupt at t2 and t3 still runs the scheduling decision - it just keeps arriving at the same answer, because nothing about Task 2's eligibility has changed.</figcaption>
+      </figure>
+
+      <p class="aside"><b>This is a real hazard, not just an illustration.</b> A higher-priority task that never blocks will starve everything below it, forever. It's the reason FreeRTOS tasks are almost always written to spend most of their time Blocked - waiting on a delay, a queue, or an event - rather than looping without ever giving anything up.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="delay">
+      <div class="topic-head"><span class="topic-num">6</span><h2>Blocking instead of spinning</h2></div>
+      <p>The fix for the starvation pattern above: have each task voluntarily give up the CPU with <code>vTaskDelay()</code> once it's done its work for this pass, instead of looping forever. When every task is Blocked at once, a third task appears in the picture that's always there but easy to forget - the idle task.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="dl-t">
+          <title id="dl-t">Two tasks that both call vTaskDelay, with the idle task filling the resulting gap</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+            <text x="10" y="24" font-weight="700" fill="#2E7D5B">Task 2 (high)</text>
+            <text x="10" y="94" font-weight="700">Task 1 (low)</text>
+            <text x="10" y="164" font-weight="700" fill="#9198A0">Idle</text>
+
+            <rect x="120" y="8" width="40" height="20" fill="#2E7D5B"/>
+            <rect x="160" y="78" width="40" height="20" fill="#35618C"/>
+            <rect x="200" y="148" width="480" height="20" fill="#1E2125"/>
+            <rect x="680" y="8" width="40" height="20" fill="#2E7D5B"/>
+            <rect x="720" y="78" width="40" height="20" fill="#35618C"/>
+
+            <g stroke="#D8DAD3" stroke-dasharray="2,3">
+              <line x1="120" y1="0" x2="120" y2="200"/><line x1="160" y1="0" x2="160" y2="200"/><line x1="200" y1="0" x2="200" y2="200"/><line x1="680" y1="0" x2="680" y2="200"/>
+            </g>
+            <text x="120" y="218" text-anchor="middle" font-size="11">t1</text>
+            <text x="160" y="218" text-anchor="middle" font-size="11">t2</text>
+            <text x="200" y="218" text-anchor="middle" font-size="11">t3</text>
+            <text x="680" y="218" text-anchor="middle" font-size="11">tn</text>
+            <path d="M10,235 H890" stroke="#1E2125" stroke-width="1.3"/>
+            <path d="M880,228 L890,235 L880,242" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+          </g>
+        </svg>
+        <figcaption>Task 2 (higher priority) runs first, prints, then blocks. Task 1 gets its turn, prints, then also blocks. With both tasks now Blocked, the idle task runs for the entire remaining gap, until Task 2's delay expires at tn and the whole sequence repeats.</figcaption>
+      </figure>
+
+      <p>This is the same shape as <code>vApplicationIdleHook()</code> putting the core to sleep instead of spinning - covered in <a href="#">the SysTick / PendSV notes</a> - except here the point is what makes the gap exist in the first place: two tasks that gave the CPU back voluntarily, rather than one that never had to.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="mixed">
+      <div class="topic-head"><span class="topic-num">7</span><h2>Mixing time-slicing and preemption</h2></div>
+      <p>Real systems combine both patterns at once. Here, two low-priority "continuous" tasks round-robin between themselves exactly like the two-task example earlier - but a higher-priority "periodic" task cuts in every so often, runs briefly, and hands control straight back.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 280" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mx-t">
+          <title id="mx-t">A periodic higher-priority task interrupts round-robin time-slicing between two lower-priority tasks</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+            <text x="10" y="24" font-weight="700" fill="#A05A2C">Periodic</text>
+            <text x="10" y="94" font-weight="700" fill="#35618C">Continuous 1</text>
+            <text x="10" y="164" font-weight="700" fill="#2E7D5B">Continuous 2</text>
+            <text x="10" y="224" font-weight="700" fill="#9198A0">Idle</text>
+
+            <rect x="150" y="8" width="8" height="20" fill="#A05A2C"/>
+            <rect x="450" y="8" width="8" height="20" fill="#A05A2C"/>
+            <rect x="700" y="8" width="8" height="20" fill="#A05A2C"/>
+
+            <rect x="120" y="78" width="200" height="20" fill="#35618C"/>
+            <rect x="450" y="78" width="120" height="20" fill="#35618C"/>
+            <rect x="700" y="78" width="150" height="20" fill="#35618C"/>
+
+            <rect x="320" y="148" width="130" height="20" fill="#2E7D5B"/>
+            <rect x="570" y="148" width="130" height="20" fill="#2E7D5B"/>
+
+            <rect x="120" y="200" width="730" height="16" fill="#F3F4F0"/>
+
+            <g stroke="#D8DAD3" stroke-dasharray="2,3">
+              <line x1="120" y1="0" x2="120" y2="230"/><line x1="320" y1="0" x2="320" y2="230"/><line x1="450" y1="0" x2="450" y2="230"/><line x1="700" y1="0" x2="700" y2="230"/>
+            </g>
+            <text x="120" y="248" text-anchor="middle" font-size="11">t1</text>
+            <text x="320" y="248" text-anchor="middle" font-size="11">t2</text>
+            <text x="450" y="248" text-anchor="middle" font-size="11">t3</text>
+            <text x="700" y="248" text-anchor="middle" font-size="11">t5</text>
+            <path d="M10,265 H890" stroke="#1E2125" stroke-width="1.3"/>
+            <path d="M880,258 L890,265 L880,272" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+          </g>
+        </svg>
+        <figcaption>Continuous 1 and Continuous 2 share the CPU tick-by-tick between them, same priority, same as before. Periodic is higher priority than both - each time its block period expires, it preempts whichever continuous task is running, prints once, and immediately blocks again until next time.</figcaption>
+      </figure>
+
+      <p class="aside"><b>Where idle fits.</b> The idle task never appears as a real slice here, because Continuous 1 and Continuous 2 between them are <em>always</em> Ready - there's never a moment with nothing eligible to run below Periodic's priority.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="createdelete">
+      <div class="topic-head"><span class="topic-num">8</span><h2>Creating and deleting tasks</h2></div>
+      <p>Tasks aren't fixed at compile time - one task can create another with <code>xTaskCreate()</code> at any point, and a task can delete itself (or be deleted by another) with <code>vTaskDelete()</code>.</p>
+
+      <figure>
+        <svg viewBox="0 0 900 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="cd-t">
+          <title id="cd-t">Task 1 creates Task 2, which runs once at higher priority and then deletes itself</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+            <text x="10" y="24" font-weight="700" fill="#35618C">Task 2 (new)</text>
+            <text x="10" y="94" font-weight="700" fill="#2E7D5B">Task 1</text>
+            <text x="10" y="164" font-weight="700" fill="#9198A0">Idle</text>
+
+            <rect x="150" y="8" width="60" height="20" fill="#35618C"/>
+            <rect x="120" y="78" width="30" height="20" fill="#2E7D5B"/>
+            <rect x="210" y="78" width="470" height="20" fill="#2E7D5B"/>
+            <rect x="680" y="148" width="0" height="20" fill="#F3F4F0"/>
+
+            <text x="240" y="35" font-size="9.5" fill="#35618C">xTaskCreate() called from Task 1</text>
+            <text x="230" y="115" font-size="9.5" fill="#2E7D5B">execution returns to Task 1 once Task 2 self-deletes</text>
+
+            <g stroke="#D8DAD3" stroke-dasharray="2,3">
+              <line x1="120" y1="0" x2="120" y2="180"/><line x1="150" y1="0" x2="150" y2="180"/><line x1="210" y1="0" x2="210" y2="180"/>
+            </g>
+            <text x="120" y="198" text-anchor="middle" font-size="11">t1</text>
+            <text x="150" y="198" text-anchor="middle" font-size="11">t2</text>
+            <path d="M10,215 H890" stroke="#1E2125" stroke-width="1.3"/>
+            <path d="M880,208 L890,215 L880,222" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+          </g>
+        </svg>
+        <figcaption>Task 1 runs, creates Task 2 at a higher priority. Task 2 immediately preempts it, does nothing but delete itself, and control returns to Task 1 - which then blocks, and the sequence repeats from the top.</figcaption>
+      </figure>
+
+      <p>The task that calls <code>vTaskDelete(NULL)</code> on itself never actually frees its own memory - it can't, while still standing on its own stack. That cleanup is deferred to the idle task, the next time it runs. A system where nothing ever calls <code>vTaskDelete()</code> from a task that's never given the idle task a chance to run will leak memory quietly, one deleted task at a time.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="capstone">
+      <div class="topic-head"><span class="topic-num">9</span><h2>A busier system, end to end</h2></div>
+      <p>Pulling everything together: four priority levels, a mix of event-driven and periodic tasks, several preemption points in a row. Nothing new conceptually - just more of the same rules, layered.</p>
+
+      <figure>
+        <svg viewBox="0 0 1000 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="cap-t">
+          <title id="cap-t">A four-priority execution pattern with several preemption points highlighted</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+            <text x="10" y="24" font-weight="700" fill="#6E5A96">Task1 (high, event)</text>
+            <text x="10" y="74" font-weight="700" fill="#A05A2C">Task2 (med, periodic)</text>
+            <text x="10" y="124" font-weight="700" fill="#35618C">Task3 (low, event)</text>
+            <text x="10" y="174" font-weight="700" fill="#9198A0">Idle (continuous)</text>
+
+            <!-- idle baseline -->
+            <rect x="220" y="160" width="740" height="16" fill="#F3F4F0"/>
+            <!-- task3 bursts -->
+            <rect x="260" y="110" width="60" height="16" fill="#35618C"/>
+            <rect x="400" y="110" width="60" height="16" fill="#35618C"/>
+            <rect x="700" y="110" width="90" height="16" fill="#35618C"/>
+            <!-- task2 periodic bursts, higher than task3 -->
+            <rect x="320" y="60" width="80" height="16" fill="#A05A2C"/>
+            <rect x="600" y="60" width="100" height="16" fill="#A05A2C"/>
+            <!-- task1 tiny event spike, highest -->
+            <rect x="790" y="12" width="20" height="16" fill="#6E5A96"/>
+
+            <g stroke="#D8DAD3" stroke-dasharray="2,3">
+              <line x1="220" y1="0" x2="220" y2="190"/>
+              <line x1="260" y1="0" x2="260" y2="190"/>
+              <line x1="320" y1="0" x2="320" y2="190"/>
+              <line x1="400" y1="0" x2="400" y2="190"/>
+              <line x1="460" y1="0" x2="460" y2="190"/>
+              <line x1="600" y1="0" x2="600" y2="190"/>
+              <line x1="700" y1="0" x2="700" y2="190"/>
+              <line x1="790" y1="0" x2="790" y2="190"/>
+              <line x1="810" y1="0" x2="810" y2="190"/>
+            </g>
+            <text x="220" y="205" text-anchor="middle" font-size="10">t1</text>
+            <text x="260" y="205" text-anchor="middle" font-size="10">t2</text>
+            <text x="320" y="205" text-anchor="middle" font-size="10">t3</text>
+            <text x="460" y="205" text-anchor="middle" font-size="10">t5</text>
+            <text x="700" y="205" text-anchor="middle" font-size="10">t9</text>
+            <text x="790" y="205" text-anchor="middle" font-size="10">t10</text>
+            <text x="810" y="205" text-anchor="middle" font-size="10">t11</text>
+
+            <path d="M10,225 H990" stroke="#1E2125" stroke-width="1.3"/>
+            <path d="M980,218 L990,225 L980,232" fill="none" stroke="#1E2125" stroke-width="1.3"/>
+
+            <!-- callouts -->
+            <path d="M290,110 V245" stroke="#9198A0" stroke-width="1" stroke-dasharray="2,2"/>
+            <text x="150" y="262" font-size="10.5" fill="#5B6167" text-anchor="middle">Task3 preempts Idle</text>
+
+            <path d="M360,60 V270" stroke="#9198A0" stroke-width="1" stroke-dasharray="2,2"/>
+            <text x="430" y="288" font-size="10.5" fill="#5B6167" text-anchor="middle">Task2 preempts Task3</text>
+
+            <path d="M800,12 V245" stroke="#9198A0" stroke-width="1" stroke-dasharray="2,2"/>
+            <text x="880" y="262" font-size="10.5" fill="#5B6167" text-anchor="middle">Task1 preempts Task2</text>
+          </g>
+        </svg>
+        <figcaption>Every colored block preempts whatever was running beneath it in priority - Task3 cuts into idle, Task2 cuts into Task3, Task1 cuts into Task2. Between t3 and t9, event-driven Task3 handles two separate bursts, each still bounded above by Task2's periodic priority.</figcaption>
+      </figure>
+
+      <p class="aside"><b>The general rule, stated once.</b> Every one of the nine diagrams above is really the same three sentences applied over and over: the highest-priority Ready task runs. A task becomes Ready by an event, a timeout, or being created. A running task stops being Running by blocking, being preempted, being suspended, or being deleted. Everything else is bookkeeping.</p>
+    </section>
+
+    <div class="footline">Original notes on FreeRTOS task management &middot; execution patterns are illustrative examples, not reproductions of any specific published figure</div>
+  </main>
+</div>
+</body>
+</html>

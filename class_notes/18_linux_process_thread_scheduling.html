@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Linux process vs thread scheduling — full walkthrough</title>
+<style>
+  body {
+    background: #ffffff;
+    color: #222222;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 780px;
+    margin: 40px auto 100px;
+    padding: 0 20px;
+    line-height: 1.65;
+  }
+  h1 { font-size: 24px; font-weight: 600; margin-bottom: 6px; }
+  h2 { font-size: 19px; font-weight: 600; margin-top: 56px; margin-bottom: 4px; border-top: 1px solid #eeeeee; padding-top: 32px; }
+  h3 { font-size: 15px; font-weight: 600; margin-top: 24px; margin-bottom: 8px; color: #333333; }
+  p { margin: 10px 0; }
+  p.sub { color: #666666; font-size: 14px; margin-top: 0; }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 8px; }
+  code { background: #f4f3ef; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  .figure { margin: 20px 0 8px; }
+  .caption { text-align: center; font-size: 12px; color: #888888; margin-top: 4px; }
+  .notes { background: #fafaf7; border: 1px solid #ececea; border-radius: 10px; padding: 16px 20px; font-size: 14px; margin-top: 16px; }
+  .notes p:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<h1>Linux process vs thread scheduling</h1>
+<p class="sub">A walkthrough: process/thread structure, how the scheduler treats them, and how cgroups change the picture on a 4-core system.</p>
+
+<!-- ============================================================ -->
+<h2>1. Process vs thread — internal structure</h2>
+<p>Linux doesn't have a separate "thread" data structure. Both processes and threads are represented by the same kernel object — <code>task_struct</code> — and both are created by the same syscall, <code>clone()</code>. The difference is entirely about which resources you tell <code>clone()</code> to share.</p>
+
+<h3>A process: private everything</h3>
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 460" role="img">
+<title>Structure of a Linux process</title>
+<defs><marker id="arrow1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="40" y="40" width="220" height="200" rx="12" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="150" y="66" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">task_struct (PCB)</text>
+<rect x="60" y="84" width="180" height="30" rx="6" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="150" y="103" text-anchor="middle" font-size="12" fill="#3C3489">pid, state, priority</text>
+<rect x="60" y="122" width="180" height="30" rx="6" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="150" y="141" text-anchor="middle" font-size="12" fill="#3C3489">mm (page tables)</text>
+<rect x="60" y="160" width="180" height="30" rx="6" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="150" y="179" text-anchor="middle" font-size="12" fill="#3C3489">files_struct (fds)</text>
+<rect x="60" y="198" width="180" height="30" rx="6" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="150" y="217" text-anchor="middle" font-size="12" fill="#3C3489">signal handlers</text>
+
+<path d="M260 137L340 137" fill="none" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow1)"/>
+<text x="300" y="128" text-anchor="middle" font-size="12" fill="#888888">owns</text>
+
+<rect x="340" y="40" width="260" height="380" rx="12" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="470" y="66" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Virtual address space</text>
+<rect x="360" y="84" width="220" height="50" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="105" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Text</text><text x="470" y="123" text-anchor="middle" font-size="12" fill="#0F6E56">Program code</text>
+<rect x="360" y="144" width="220" height="50" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="165" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Data / BSS</text><text x="470" y="183" text-anchor="middle" font-size="12" fill="#0F6E56">Globals, statics</text>
+<rect x="360" y="204" width="220" height="50" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="225" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Heap</text><text x="470" y="243" text-anchor="middle" font-size="12" fill="#0F6E56">malloc'd memory</text>
+<rect x="360" y="264" width="220" height="50" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="285" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Mmap region</text><text x="470" y="303" text-anchor="middle" font-size="12" fill="#0F6E56">Shared libs, mmap</text>
+<rect x="360" y="324" width="220" height="50" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="345" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Stack</text><text x="470" y="363" text-anchor="middle" font-size="12" fill="#0F6E56">Locals, call frames</text>
+
+<text x="150" y="264" text-anchor="middle" font-size="12" fill="#888888">One task_struct per process,</text>
+<text x="150" y="280" text-anchor="middle" font-size="12" fill="#888888">its own private mm_struct</text>
+</svg>
+</div>
+
+<h3>Threads: shared address space, private stack + registers</h3>
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 480" role="img">
+<title>Structure of Linux threads sharing a process</title>
+<defs><marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="30" y="40" width="150" height="70" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="105" y="65" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Thread 1</text><text x="105" y="83" text-anchor="middle" font-size="12" fill="#534AB7">own stack, regs</text>
+<rect x="30" y="130" width="150" height="70" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="105" y="155" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Thread 2</text><text x="105" y="173" text-anchor="middle" font-size="12" fill="#534AB7">own stack, regs</text>
+<rect x="30" y="220" width="150" height="70" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="105" y="245" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Thread 3</text><text x="105" y="263" text-anchor="middle" font-size="12" fill="#534AB7">own stack, regs</text>
+
+<path d="M180 75L340 75L340 165" fill="none" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow2)"/>
+<path d="M180 165L340 165" fill="none" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow2)"/>
+<path d="M180 255L340 255L340 175" fill="none" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow2)"/>
+<text x="250" y="145" text-anchor="middle" font-size="12" fill="#888888">shares</text>
+
+<rect x="340" y="40" width="260" height="410" rx="12" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="470" y="66" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Shared mm_struct</text>
+<rect x="360" y="84" width="220" height="44" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="110" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Text</text>
+<rect x="360" y="138" width="220" height="44" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="164" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Data / BSS</text>
+<rect x="360" y="192" width="220" height="44" rx="8" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="218" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Heap</text>
+<rect x="360" y="246" width="220" height="34" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="0.5"/><text x="470" y="267" text-anchor="middle" font-size="12" fill="#72243E">Stack — thread 1</text>
+<rect x="360" y="288" width="220" height="34" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="0.5"/><text x="470" y="309" text-anchor="middle" font-size="12" fill="#72243E">Stack — thread 2</text>
+<rect x="360" y="330" width="220" height="34" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="0.5"/><text x="470" y="351" text-anchor="middle" font-size="12" fill="#72243E">Stack — thread 3</text>
+<rect x="360" y="374" width="220" height="34" rx="6" fill="#ffffff" stroke="#0F6E56" stroke-width="0.5"/><text x="470" y="395" text-anchor="middle" font-size="12" fill="#0F6E56">Mmap region</text>
+
+<text x="105" y="324" text-anchor="middle" font-size="12" fill="#888888">3 separate task_structs,</text>
+<text x="105" y="340" text-anchor="middle" font-size="12" fill="#888888">1 shared mm_struct</text>
+</svg>
+</div>
+
+<div class="notes">
+<p><strong>Implementation notes:</strong></p>
+<ul>
+<li><code>fork()</code> = <code>clone(SIGCHLD)</code> with none of the sharing flags — everything is copy-on-write duplicated.</li>
+<li><code>pthread_create()</code> = <code>clone()</code> with <code>CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | ...</code>. <code>CLONE_THREAD</code> puts the new task in the same thread group (<code>tgid</code>), so <code>getpid()</code> is shared while <code>gettid()</code> differs per thread.</li>
+<li>The scheduler is oblivious to the process/thread distinction — it just special-cases "same <code>mm</code>" to skip the <code>switch_mm()</code> TLB reload.</li>
+<li>On an RTOS (FreeRTOS, uC/OS-III) a "task" is exactly what a Linux thread is — a stack + register context sharing one flat memory map, because there's no MMU-backed isolation to opt out of.</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2>2. Scheduling 3 processes + a 4th, 3-threaded process</h2>
+<p>The scheduler doesn't see "processes" — it sees a runqueue of <code>task_struct</code>s. A multithreaded process simply contributes more entities to that queue.</p>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 400" role="img">
+<title>Scheduling of 3 single-threaded processes and a 4th process with 3 threads</title>
+<defs><marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="30" y="50" width="620" height="110" rx="16" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="46" y="68" font-size="14" font-weight="600" fill="#222222">Run queue (CFS)</text>
+
+<rect x="50" y="90" width="90" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/><text x="95" y="110" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Process 1</text><text x="95" y="128" text-anchor="middle" font-size="12" fill="#185FA5">solo</text>
+<rect x="148" y="90" width="90" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/><text x="193" y="110" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Process 2</text><text x="193" y="128" text-anchor="middle" font-size="12" fill="#0F6E56">solo</text>
+<rect x="246" y="90" width="90" height="56" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/><text x="291" y="110" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">Process 3</text><text x="291" y="128" text-anchor="middle" font-size="12" fill="#854F0B">solo</text>
+<rect x="344" y="90" width="90" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="389" y="110" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">P4 – T1</text><text x="389" y="128" text-anchor="middle" font-size="12" fill="#534AB7">shares mm</text>
+<rect x="442" y="90" width="90" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="487" y="110" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">P4 – T2</text><text x="487" y="128" text-anchor="middle" font-size="12" fill="#534AB7">shares mm</text>
+<rect x="540" y="90" width="90" height="56" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="585" y="110" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">P4 – T3</text><text x="585" y="128" text-anchor="middle" font-size="12" fill="#534AB7">shares mm</text>
+
+<line x1="340" y1="160" x2="340" y2="200" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow3)"/>
+<rect x="260" y="200" width="160" height="50" rx="8" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/><text x="340" y="225" text-anchor="middle" font-size="14" font-weight="600" fill="#444441">CPU core</text>
+<line x1="340" y1="250" x2="340" y2="300" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow3)"/>
+
+<text x="46" y="290" font-size="12" fill="#666666">CPU timeline (round robin)</text>
+<rect x="46" y="300" width="60" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/><text x="76" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">P1</text>
+<rect x="112" y="300" width="60" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/><text x="142" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">P2</text>
+<rect x="178" y="300" width="60" height="40" rx="4" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/><text x="208" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">P3</text>
+<rect x="244" y="300" width="60" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="274" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">T1</text>
+<rect x="310" y="300" width="60" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="340" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">T2</text>
+<rect x="376" y="300" width="60" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="406" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">T3</text>
+<rect x="442" y="300" width="60" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/><text x="472" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">P1</text>
+<rect x="508" y="300" width="60" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="538" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">T1</text>
+<rect x="574" y="300" width="60" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/><text x="604" y="325" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">P2</text>
+
+<text x="340" y="360" text-anchor="middle" font-size="12" fill="#666666">
+<tspan x="340" dy="0">Every task_struct gets an equal turn,</tspan>
+<tspan x="340" dy="16">so P4's 3 threads get 3x the CPU share of P1–P3</tspan>
+</text>
+</svg>
+</div>
+
+<div class="notes">
+<p>CFS orders the runqueue by <code>vruntime</code> (accumulated CPU time) and always dispatches whoever's behind, weighted by <code>nice</code> — the round-robin picture above is an intuitive approximation of that. Because P4's 3 threads are 3 separate <code>task_struct</code>s with 3 separate <code>vruntime</code> counters, they compete individually against P1–P3, giving P4 roughly 3x the CPU attention of a single-threaded process — <strong>unless</strong> it's placed in a cgroup, which is exactly what changes in the next section.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>3. Adding cgroups on a 4-core system</h2>
+<p>Now: 3 single-threaded processes (P1–P3), a 4th process with 3 <em>ungrouped</em> threads (P4), and a 5th process with 3 threads placed in one <em>cgroup</em> (P5) — scheduled across 4 CPU cores.</p>
+
+<h3>Stage 1 — scheduling entities: ungrouped vs cgrouped</h3>
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 460" role="img">
+<title>Scheduling entities: ungrouped threads vs a cgrouped process</title>
+
+<rect x="95" y="40" width="150" height="56" rx="8" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/><text x="170" y="60" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Process 1</text><text x="170" y="78" text-anchor="middle" font-size="12" fill="#185FA5">1 entity</text>
+<rect x="265" y="40" width="150" height="56" rx="8" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/><text x="340" y="60" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Process 2</text><text x="340" y="78" text-anchor="middle" font-size="12" fill="#0F6E56">1 entity</text>
+<rect x="435" y="40" width="150" height="56" rx="8" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/><text x="510" y="60" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">Process 3</text><text x="510" y="78" text-anchor="middle" font-size="12" fill="#854F0B">1 entity</text>
+
+<rect x="40" y="150" width="290" height="230" rx="16" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="60" y="175" font-size="14" font-weight="600" fill="#222222">Process 4 — ungrouped</text>
+<rect x="60" y="190" width="250" height="50" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="185" y="207" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">T1</text><text x="185" y="225" text-anchor="middle" font-size="12" fill="#534AB7">own vruntime</text>
+<rect x="60" y="250" width="250" height="50" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="185" y="267" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">T2</text><text x="185" y="285" text-anchor="middle" font-size="12" fill="#534AB7">own vruntime</text>
+<rect x="60" y="310" width="250" height="50" rx="8" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="185" y="327" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">T3</text><text x="185" y="345" text-anchor="middle" font-size="12" fill="#534AB7">own vruntime</text>
+
+<rect x="350" y="150" width="290" height="230" rx="16" fill="#FBEAF0" stroke="#993556" stroke-width="1.5"/>
+<text x="370" y="175" font-size="14" font-weight="600" fill="#4B1528">Process 5 — cgrouped</text>
+<rect x="370" y="190" width="250" height="50" rx="8" fill="#ffffff" stroke="#993556" stroke-width="0.5"/><text x="495" y="207" text-anchor="middle" font-size="14" font-weight="600" fill="#72243E">T1</text><text x="495" y="225" text-anchor="middle" font-size="12" fill="#993556">in cgroup</text>
+<rect x="370" y="250" width="250" height="50" rx="8" fill="#ffffff" stroke="#993556" stroke-width="0.5"/><text x="495" y="267" text-anchor="middle" font-size="14" font-weight="600" fill="#72243E">T2</text><text x="495" y="285" text-anchor="middle" font-size="12" fill="#993556">in cgroup</text>
+<rect x="370" y="310" width="250" height="50" rx="8" fill="#ffffff" stroke="#993556" stroke-width="0.5"/><text x="495" y="327" text-anchor="middle" font-size="14" font-weight="600" fill="#72243E">T3</text><text x="495" y="345" text-anchor="middle" font-size="12" fill="#993556">in cgroup</text>
+
+<text x="340" y="410" text-anchor="middle" font-size="12" fill="#666666">
+<tspan x="340" dy="0">P4's 3 threads = 3 independent scheduler turns (3x share).</tspan>
+<tspan x="340" dy="16">P5's 3 threads = 1 shared turn, split internally (1x share).</tspan>
+</text>
+</svg>
+</div>
+
+<h3>Stage 2 — how the 9 task_structs land on 4 cores</h3>
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 300" role="img">
+<title>Placement of nine task_structs across four CPU cores</title>
+
+<rect x="48" y="50" width="135" height="170" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="115" y="72" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">CPU 0</text>
+<rect x="60" y="90" width="110" height="32" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/><text x="115" y="110" text-anchor="middle" font-size="12" fill="#0C447C">P1</text>
+<rect x="60" y="128" width="110" height="32" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="1"/><text x="115" y="148" text-anchor="middle" font-size="12" fill="#72243E">P5 – T1</text>
+
+<rect x="198" y="50" width="135" height="170" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="265" y="72" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">CPU 1</text>
+<rect x="210" y="90" width="110" height="32" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/><text x="265" y="110" text-anchor="middle" font-size="12" fill="#085041">P2</text>
+<rect x="210" y="128" width="110" height="32" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="265" y="148" text-anchor="middle" font-size="12" fill="#3C3489">P4 – T1</text>
+
+<rect x="348" y="50" width="135" height="170" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="415" y="72" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">CPU 2</text>
+<rect x="360" y="90" width="110" height="32" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/><text x="415" y="110" text-anchor="middle" font-size="12" fill="#633806">P3</text>
+<rect x="360" y="128" width="110" height="32" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="415" y="148" text-anchor="middle" font-size="12" fill="#3C3489">P4 – T2</text>
+<rect x="360" y="166" width="110" height="32" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="1"/><text x="415" y="186" text-anchor="middle" font-size="12" fill="#72243E">P5 – T2</text>
+
+<rect x="498" y="50" width="135" height="170" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5"/>
+<text x="565" y="72" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">CPU 3</text>
+<rect x="510" y="90" width="110" height="32" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="565" y="110" text-anchor="middle" font-size="12" fill="#3C3489">P4 – T3</text>
+<rect x="510" y="128" width="110" height="32" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="1"/><text x="565" y="148" text-anchor="middle" font-size="12" fill="#72243E">P5 – T3</text>
+
+<text x="340" y="250" text-anchor="middle" font-size="12" fill="#666666">
+<tspan x="340" dy="0">Cores run independently; the load balancer migrates task_structs between them.</tspan>
+<tspan x="340" dy="16">P5's cgroup quota caps its 3 threads' combined time, regardless of which cores they hit.</tspan>
+</text>
+</svg>
+</div>
+
+<h3>Stage 2, redrawn — runqueues on top, cores below</h3>
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 370" role="img">
+<title>Per-CPU runqueues feeding four CPU cores</title>
+<defs><marker id="arrow4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
+
+<rect x="48" y="50" width="135" height="150" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="115" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">Runqueue 0</text>
+<rect x="60" y="86" width="110" height="32" rx="6" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/><text x="115" y="106" text-anchor="middle" font-size="12" fill="#0C447C">P1</text>
+<rect x="60" y="124" width="110" height="32" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="1"/><text x="115" y="144" text-anchor="middle" font-size="12" fill="#72243E">P5 – T1</text>
+<line x1="115" y1="200" x2="115" y2="230" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow4)"/>
+<rect x="48" y="230" width="135" height="50" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/><text x="115" y="255" text-anchor="middle" font-size="14" font-weight="600" fill="#444441">CPU 0</text>
+
+<rect x="198" y="50" width="135" height="150" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="265" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">Runqueue 1</text>
+<rect x="210" y="86" width="110" height="32" rx="6" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/><text x="265" y="106" text-anchor="middle" font-size="12" fill="#085041">P2</text>
+<rect x="210" y="124" width="110" height="32" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="265" y="144" text-anchor="middle" font-size="12" fill="#3C3489">P4 – T1</text>
+<line x1="265" y1="200" x2="265" y2="230" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow4)"/>
+<rect x="198" y="230" width="135" height="50" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/><text x="265" y="255" text-anchor="middle" font-size="14" font-weight="600" fill="#444441">CPU 1</text>
+
+<rect x="348" y="50" width="135" height="150" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="415" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">Runqueue 2</text>
+<rect x="360" y="86" width="110" height="30" rx="6" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/><text x="415" y="105" text-anchor="middle" font-size="12" fill="#633806">P3</text>
+<rect x="360" y="120" width="110" height="30" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="415" y="139" text-anchor="middle" font-size="12" fill="#3C3489">P4 – T2</text>
+<rect x="360" y="154" width="110" height="30" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="1"/><text x="415" y="173" text-anchor="middle" font-size="12" fill="#72243E">P5 – T2</text>
+<line x1="415" y1="200" x2="415" y2="230" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow4)"/>
+<rect x="348" y="230" width="135" height="50" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/><text x="415" y="255" text-anchor="middle" font-size="14" font-weight="600" fill="#444441">CPU 2</text>
+
+<rect x="498" y="50" width="135" height="150" rx="14" fill="none" stroke="#5F5E5A" stroke-width="0.5" stroke-dasharray="4 3"/>
+<text x="565" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#222222">Runqueue 3</text>
+<rect x="510" y="86" width="110" height="32" rx="6" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="565" y="106" text-anchor="middle" font-size="12" fill="#3C3489">P4 – T3</text>
+<rect x="510" y="124" width="110" height="32" rx="6" fill="#FBEAF0" stroke="#993556" stroke-width="1"/><text x="565" y="144" text-anchor="middle" font-size="12" fill="#72243E">P5 – T3</text>
+<line x1="565" y1="200" x2="565" y2="230" stroke="#5F5E5A" stroke-width="0.5" marker-end="url(#arrow4)"/>
+<rect x="498" y="230" width="135" height="50" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/><text x="565" y="255" text-anchor="middle" font-size="14" font-weight="600" fill="#444441">CPU 3</text>
+
+<text x="340" y="320" text-anchor="middle" font-size="12" fill="#666666">
+<tspan x="340" dy="0">Each core drains only its own runqueue — the load balancer, not the</tspan>
+<tspan x="340" dy="16">running core, is what moves task_structs between queues.</tspan>
+</text>
+</svg>
+</div>
+
+<div class="notes">
+<p>The purple dashed box around process 4 in stage 1 is just a grouping for the diagram — its threads genuinely compete as 3 separate <code>task_struct</code>s. Process 5's pink box <em>is</em> a real kernel structure: a <code>cpu</code> cgroup. With <code>CONFIG_FAIR_GROUP_SCHED</code>, the whole cgroup is one scheduling entity at the top level, with a second round of CFS happening <em>inside</em> it among its threads. Each dashed runqueue box above is a per-core <code>cfs_rq</code> (a red-black tree keyed on <code>vruntime</code>); cross-core movement only happens via <code>load_balance()</code>, not the running core itself.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>4. Gantt chart — simplified, unlimited round robin</h2>
+<p>A simplified timeline, treating each core's runqueue as strict round robin with no task ever running out of work:</p>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 320" role="img">
+<title>Simplified Gantt chart of execution slots across 4 CPU cores</title>
+<g font-size="12" fill="#888888" text-anchor="middle">
+<text x="152" y="45">t0</text><text x="217" y="45">t1</text><text x="282" y="45">t2</text><text x="347" y="45">t3</text><text x="412" y="45">t4</text><text x="477" y="45">t5</text><text x="542" y="45">t6</text><text x="607" y="45">t7</text>
+</g>
+
+<text x="45" y="80" font-size="14" font-weight="600" fill="#222222">CPU 0</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="151" y="84" fill="#0C447C">P1</text>
+<rect x="185" y="60" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="216" y="84" fill="#72243E">5T1</text>
+<rect x="250" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="281" y="84" fill="#0C447C">P1</text>
+<rect x="315" y="60" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="346" y="84" fill="#72243E">5T1</text>
+<rect x="380" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="411" y="84" fill="#0C447C">P1</text>
+<rect x="445" y="60" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="476" y="84" fill="#72243E">5T1</text>
+<rect x="510" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="541" y="84" fill="#0C447C">P1</text>
+<rect x="575" y="60" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="606" y="84" fill="#72243E">5T1</text>
+</g>
+
+<text x="45" y="130" font-size="14" font-weight="600" fill="#222222">CPU 1</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="110" width="63" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56"/><text x="151" y="134" fill="#085041">P2</text>
+<rect x="185" y="110" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="216" y="134" fill="#3C3489">4T1</text>
+<rect x="250" y="110" width="63" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56"/><text x="281" y="134" fill="#085041">P2</text>
+<rect x="315" y="110" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="346" y="134" fill="#3C3489">4T1</text>
+<rect x="380" y="110" width="63" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56"/><text x="411" y="134" fill="#085041">P2</text>
+<rect x="445" y="110" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="476" y="134" fill="#3C3489">4T1</text>
+<rect x="510" y="110" width="63" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56"/><text x="541" y="134" fill="#085041">P2</text>
+<rect x="575" y="110" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="606" y="134" fill="#3C3489">4T1</text>
+</g>
+
+<text x="45" y="180" font-size="14" font-weight="600" fill="#222222">CPU 2</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="160" width="63" height="40" rx="4" fill="#FAEEDA" stroke="#854F0B"/><text x="151" y="184" fill="#633806">P3</text>
+<rect x="185" y="160" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="216" y="184" fill="#3C3489">4T2</text>
+<rect x="250" y="160" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="281" y="184" fill="#72243E">5T2</text>
+<rect x="315" y="160" width="63" height="40" rx="4" fill="#FAEEDA" stroke="#854F0B"/><text x="346" y="184" fill="#633806">P3</text>
+<rect x="380" y="160" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="411" y="184" fill="#3C3489">4T2</text>
+<rect x="445" y="160" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="476" y="184" fill="#72243E">5T2</text>
+<rect x="510" y="160" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="541" y="184" fill="#3C3489">4T2</text>
+<rect x="575" y="160" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="606" y="184" fill="#72243E">5T2</text>
+</g>
+
+<text x="45" y="230" font-size="14" font-weight="600" fill="#222222">CPU 3</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="151" y="234" fill="#3C3489">4T3</text>
+<rect x="185" y="210" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="216" y="234" fill="#72243E">5T3</text>
+<rect x="250" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="281" y="234" fill="#3C3489">4T3</text>
+<rect x="315" y="210" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="346" y="234" fill="#72243E">5T3</text>
+<rect x="380" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="411" y="234" fill="#3C3489">4T3</text>
+<rect x="445" y="210" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="476" y="234" fill="#72243E">5T3</text>
+<rect x="510" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="541" y="234" fill="#3C3489">4T3</text>
+<rect x="575" y="210" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="606" y="234" fill="#72243E">5T3</text>
+</g>
+
+<text x="340" y="280" text-anchor="middle" font-size="12" fill="#666666">
+<tspan x="340" dy="0">Simplified — real CFS preempts on vruntime, not fixed slots.</tspan>
+<tspan x="340" dy="16">P5's slots ("5T1"/"5T2"/"5T3") are further capped by its cgroup quota.</tspan>
+</text>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>5. Correcting the scale: cgroup total vs individual threads</h2>
+<p>A cgroup doesn't shrink each thread's individual slot — it caps the <strong>combined total</strong> of all its threads. Drawn to scale by total runtime (P1=4, P2=3, P3=2, P4: T1=2/T2=3/T3=4, P5: T1=2/T2=3/T3=2):</p>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 420" role="img">
+<title>Total runtime to scale: ungrouped entities vs one cgrouped entity</title>
+
+<text x="45" y="65" font-size="14" font-weight="600" fill="#222222">P1</text>
+<rect x="140" y="50" width="200" height="30" rx="4" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+<text x="348" y="70" font-size="12" fill="#666666">4 slots</text>
+
+<text x="45" y="107" font-size="14" font-weight="600" fill="#222222">P2</text>
+<rect x="140" y="92" width="150" height="30" rx="4" fill="#E1F5EE" stroke="#0F6E56" stroke-width="1"/>
+<text x="298" y="112" font-size="12" fill="#666666">3 slots</text>
+
+<text x="45" y="149" font-size="14" font-weight="600" fill="#222222">P3</text>
+<rect x="140" y="134" width="100" height="30" rx="4" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/>
+<text x="248" y="154" font-size="12" fill="#666666">2 slots</text>
+
+<text x="45" y="191" font-size="14" font-weight="600" fill="#222222">P4 – T1</text>
+<rect x="140" y="176" width="100" height="30" rx="4" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="248" y="196" font-size="12" fill="#666666">2 slots</text>
+
+<text x="45" y="233" font-size="14" font-weight="600" fill="#222222">P4 – T2</text>
+<rect x="140" y="218" width="150" height="30" rx="4" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="298" y="238" font-size="12" fill="#666666">3 slots</text>
+
+<text x="45" y="275" font-size="14" font-weight="600" fill="#222222">P4 – T3</text>
+<rect x="140" y="260" width="200" height="30" rx="4" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="348" y="280" font-size="12" fill="#666666">4 slots</text>
+
+<text x="45" y="331" font-size="14" font-weight="600" fill="#222222">P5 group</text>
+<rect x="140" y="316" width="350" height="30" rx="4" fill="#FBEAF0" stroke="#993556" stroke-width="1.5"/>
+<line x1="240" y1="316" x2="240" y2="346" stroke="#993556" stroke-width="0.5"/>
+<line x1="390" y1="316" x2="390" y2="346" stroke="#993556" stroke-width="0.5"/>
+<text x="190" y="335" text-anchor="middle" font-size="12" fill="#72243E">T1 · 2</text>
+<text x="315" y="335" text-anchor="middle" font-size="12" fill="#72243E">T2 · 3</text>
+<text x="440" y="335" text-anchor="middle" font-size="12" fill="#72243E">T3 · 2</text>
+<text x="498" y="335" font-size="12" fill="#666666">7 slots total</text>
+
+<text x="340" y="376" text-anchor="middle" font-size="12" fill="#666666">
+<tspan x="340" dy="0">P4's threads are 3 separate bars, summing to 9 across independent turns.</tspan>
+<tspan x="340" dy="16">P5's threads are 1 bar, capped as a group at 7 — regardless of how it's split inside.</tspan>
+</text>
+</svg>
+</div>
+
+<div class="notes">
+<p>P4's three bars are separate rows because each competes independently against P1–P3 for turns — nothing stops P4 from accumulating 9 total slots. P5's bar is one continuous shape because that's the real constraint surface: whatever <code>cpu.shares</code>/<code>cpu.weight</code> or <code>cpu.max</code> is set applies to the <em>outer</em> pink bar's length, and the 2/3/2 split inside it is internal bookkeeping among its three threads, invisible outside the cgroup.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>6. Gantt chart with the real slot counts</h2>
+<p>Each task drops out once its total slots are used, and a core goes idle once its assigned work is exhausted (no load balancing modeled here):</p>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 320" role="img">
+<title>Gantt chart of 4 CPU cores using actual total slot counts</title>
+<g font-size="12" fill="#888888" text-anchor="middle">
+<text x="152" y="45">t0</text><text x="217" y="45">t1</text><text x="282" y="45">t2</text><text x="347" y="45">t3</text><text x="412" y="45">t4</text><text x="477" y="45">t5</text><text x="542" y="45">t6</text><text x="607" y="45">t7</text>
+</g>
+
+<text x="45" y="80" font-size="14" font-weight="600" fill="#222222">CPU 0</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="151" y="84" fill="#0C447C">P1</text>
+<rect x="185" y="60" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="216" y="84" fill="#72243E">5T1</text>
+<rect x="250" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="281" y="84" fill="#0C447C">P1</text>
+<rect x="315" y="60" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="346" y="84" fill="#72243E">5T1</text>
+<rect x="380" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="411" y="84" fill="#0C447C">P1</text>
+<rect x="445" y="60" width="63" height="40" rx="4" fill="#E6F1FB" stroke="#185FA5"/><text x="476" y="84" fill="#0C447C">P1</text>
+<rect x="510" y="60" width="63" height="40" rx="4" fill="#F1EFE8" stroke="#5F5E5A" stroke-dasharray="3 2"/><text x="541" y="84" fill="#444441">idle</text>
+<rect x="575" y="60" width="63" height="40" rx="4" fill="#F1EFE8" stroke="#5F5E5A" stroke-dasharray="3 2"/><text x="606" y="84" fill="#444441">idle</text>
+</g>
+
+<text x="45" y="130" font-size="14" font-weight="600" fill="#222222">CPU 1</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="110" width="63" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56"/><text x="151" y="134" fill="#085041">P2</text>
+<rect x="185" y="110" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="216" y="134" fill="#3C3489">4T1</text>
+<rect x="250" y="110" width="63" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56"/><text x="281" y="134" fill="#085041">P2</text>
+<rect x="315" y="110" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="346" y="134" fill="#3C3489">4T1</text>
+<rect x="380" y="110" width="63" height="40" rx="4" fill="#E1F5EE" stroke="#0F6E56"/><text x="411" y="134" fill="#085041">P2</text>
+<rect x="445" y="110" width="63" height="40" rx="4" fill="#F1EFE8" stroke="#5F5E5A" stroke-dasharray="3 2"/><text x="476" y="134" fill="#444441">idle</text>
+<rect x="510" y="110" width="63" height="40" rx="4" fill="#F1EFE8" stroke="#5F5E5A" stroke-dasharray="3 2"/><text x="541" y="134" fill="#444441">idle</text>
+<rect x="575" y="110" width="63" height="40" rx="4" fill="#F1EFE8" stroke="#5F5E5A" stroke-dasharray="3 2"/><text x="606" y="134" fill="#444441">idle</text>
+</g>
+
+<text x="45" y="180" font-size="14" font-weight="600" fill="#222222">CPU 2</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="160" width="63" height="40" rx="4" fill="#FAEEDA" stroke="#854F0B"/><text x="151" y="184" fill="#633806">P3</text>
+<rect x="185" y="160" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="216" y="184" fill="#3C3489">4T2</text>
+<rect x="250" y="160" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="281" y="184" fill="#72243E">5T2</text>
+<rect x="315" y="160" width="63" height="40" rx="4" fill="#FAEEDA" stroke="#854F0B"/><text x="346" y="184" fill="#633806">P3</text>
+<rect x="380" y="160" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="411" y="184" fill="#3C3489">4T2</text>
+<rect x="445" y="160" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="476" y="184" fill="#72243E">5T2</text>
+<rect x="510" y="160" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="541" y="184" fill="#3C3489">4T2</text>
+<rect x="575" y="160" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="606" y="184" fill="#72243E">5T2</text>
+</g>
+
+<text x="45" y="230" font-size="14" font-weight="600" fill="#222222">CPU 3</text>
+<g font-size="12" text-anchor="middle">
+<rect x="120" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="151" y="234" fill="#3C3489">4T3</text>
+<rect x="185" y="210" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="216" y="234" fill="#72243E">5T3</text>
+<rect x="250" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="281" y="234" fill="#3C3489">4T3</text>
+<rect x="315" y="210" width="63" height="40" rx="4" fill="#FBEAF0" stroke="#993556"/><text x="346" y="234" fill="#72243E">5T3</text>
+<rect x="380" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="411" y="234" fill="#3C3489">4T3</text>
+<rect x="445" y="210" width="63" height="40" rx="4" fill="#EEEDFE" stroke="#534AB7"/><text x="476" y="234" fill="#3C3489">4T3</text>
+<rect x="510" y="210" width="63" height="40" rx="4" fill="#F1EFE8" stroke="#5F5E5A" stroke-dasharray="3 2"/><text x="541" y="234" fill="#444441">idle</text>
+<rect x="575" y="210" width="63" height="40" rx="4" fill="#F1EFE8" stroke="#5F5E5A" stroke-dasharray="3 2"/><text x="606" y="234" fill="#444441">idle</text>
+</g>
+
+<text x="340" y="280" text-anchor="middle" font-size="12" fill="#666666">
+<tspan x="340" dy="0">Each task drops out once its total slots are used (P1=4, 5T1=2, etc).</tspan>
+<tspan x="340" dy="16">CPU 2 has the most total work (8), so it's the only core still busy at t7.</tspan>
+</text>
+</svg>
+</div>
+
+<div class="notes">
+<p>CPU 2's total work is 2+3+3 = 8, so it stays busy longest while CPU 0, 1 and 3 sit idle after t4/t5. Real CFS load balancing would very likely notice this imbalance and migrate some of CPU 2's remaining work to an idle core rather than let it run alone — nothing here models that rebalancing.</p>
+</div>
+
+</body>
+</html>

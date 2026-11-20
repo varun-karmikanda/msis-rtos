@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Priority Inversion — Demo, Gantt, and Fix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAFAF8; --ink:#1E2125; --ink-soft:#5B6167; --ink-dim:#9198A0;
+    --rule:#E3E4DF; --panel:#F3F4F0;
+    --hi:#35618C;   --hi-bg:#EAF1F8;
+    --lo:#A05A2C;   --lo-bg:#FAF0E6;
+    --med:#6E5A96;  --med-bg:#EFEBF5;
+    --run:#2E7D5B;  --run-bg:#E8F3ED;
+    --red:#B03050;  --red-bg:#FAECEE;
+    --code-bg:#232830; --code-ink:#D7DCE1; --code-dim:#7C8794; --code-acc:#8FBCE6;
+    --mono:'IBM Plex Mono',ui-monospace,Menlo,Consolas,monospace;
+    --sans:'IBM Plex Sans',-apple-system,'Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.65;-webkit-font-smoothing:antialiased;}
+  code{font-family:var(--mono);background:#EFEFE9;padding:.1em .35em;border-radius:3px;font-size:.87em;color:#3B3F45;}
+  article{max-width:1040px;margin:0 auto;padding:60px 24px 110px;}
+  .byline{font-family:var(--mono);font-size:12.5px;color:var(--ink-dim);margin:0 0 6px;}
+  h1{font-size:29px;font-weight:700;line-height:1.28;margin:0 0 14px;letter-spacing:-.015em;}
+  .dek{font-size:17px;color:var(--ink-soft);max-width:74ch;margin:0 0 8px;}
+  p{max-width:76ch;margin:0 0 16px;}
+  h2{font-size:21px;font-weight:700;margin:48px 0 6px;letter-spacing:-.01em;}
+  .sub{font-family:var(--mono);font-size:12px;color:var(--ink-dim);text-transform:uppercase;letter-spacing:.08em;margin:0 0 16px;}
+  hr.div{border:none;border-top:1px solid var(--rule);margin:46px 0;}
+
+  figure{margin:20px 0 6px;}
+  figure svg{width:100%;height:auto;display:block;}
+  figcaption{font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);margin-top:9px;max-width:80ch;}
+
+  .listing{background:var(--code-bg);border-radius:9px;padding:14px 18px;margin:16px 0 22px;overflow-x:auto;}
+  .listing .fname{font-family:var(--mono);font-size:11px;color:var(--code-dim);margin:0 0 10px;}
+  .listing code{background:none;padding:0;color:var(--code-ink);font-size:12.5px;line-height:1.7;display:block;white-space:pre;}
+  .cm{color:var(--code-dim);} .rg{color:var(--code-acc);} .kw{color:#E3B778;}
+
+  .badge{display:inline-flex;align-items:center;font-family:var(--mono);font-size:11.5px;padding:2px 9px;border-radius:20px;margin:0 4px;}
+  .badge.hi{background:var(--hi-bg);color:var(--hi);}
+  .badge.med{background:var(--med-bg);color:var(--med);}
+  .badge.lo{background:var(--lo-bg);color:var(--lo);}
+
+  table{width:100%;border-collapse:collapse;margin:14px 0 24px;font-size:14px;}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--rule);vertical-align:top;}
+  thead th{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-dim);border-bottom:1.5px solid var(--ink);}
+
+  .aside{border-left:2px solid var(--hi-bg);padding-left:16px;margin:20px 0;font-size:15px;color:var(--ink-soft);}
+  .aside b{color:var(--ink);font-weight:600;}
+  .warn{border-left:2px solid var(--red-bg);padding-left:16px;margin:20px 0;font-size:15px;background:var(--red-bg);padding:14px 18px;border-radius:0 8px 8px 0;}
+  .warn b{color:var(--red);}
+
+  .footline{margin-top:52px;padding-top:18px;border-top:1px solid var(--rule);font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);}
+</style>
+</head>
+<body>
+<article>
+
+<p class="byline">stm32f103 workspace notes</p>
+<h1>Priority Inversion — Demo, Gantt, and Fix</h1>
+<p class="dek">A program that deliberately triggers the classic priority inversion on a Bluepill, the Gantt chart of what actually executes on the core, and the one-line change that fixes it.</p>
+
+<hr class="div">
+
+<!-- ============================================================ -->
+<h2>The three tasks</h2>
+<p class="sub">hardware and priorities</p>
+
+<table>
+  <thead><tr><th>Task</th><th>Priority</th><th>Pin</th><th>Mechanism</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Task1</strong> — <code>task1_high</code></td><td><span class="badge hi">HIGH (3)</span></td><td>PA0 — external LED</td><td>Takes binary semaphore, blinks 500 ms on / 500 ms off, gives semaphore</td></tr>
+    <tr><td><strong>Task2</strong> — <code>task2_low</code></td><td><span class="badge lo">LOW (1)</span></td><td>PA1 — external LED</td><td>Takes binary semaphore, blinks 500 ms on / 500 ms off, gives semaphore</td></tr>
+    <tr><td><strong>Task3</strong> — <code>task3_med</code></td><td><span class="badge med">MED (2)</span></td><td>PC13 — onboard LED</td><td>No semaphore. Busy-waits 500 ms × 5 cycles, then sleeps 500 ms once</td></tr>
+  </tbody>
+</table>
+
+<p>PA0 and PA1 are collectively protected by a <strong>binary semaphore</strong> — not a mutex. The distinction is exactly what makes the inversion happen: a FreeRTOS mutex carries priority inheritance, which would automatically prevent the inversion. A binary semaphore has zero awareness of task priorities, so the problem plays out in full.</p>
+
+<!-- ============================================================ -->
+<h2>The code</h2>
+
+<div class="listing">
+  <p class="fname">priority-inversion/main.c — the three task functions and main()</p>
+  <pre><code><span class="cm">/* resource protection: binary semaphore, NOT a mutex */</span>
+<span class="kw">static</span> SemaphoreHandle_t xGpioABinarySem;
+
+<span class="cm">/* busy-wait: spins on a tick counter, never yields */</span>
+<span class="kw">static volatile</span> uint32_t g_ticks = 0;
+<span class="kw">void</span> vApplicationTickHook(<span class="kw">void</span>) { g_ticks++; }
+
+<span class="kw">static void</span> busy_wait_ms(uint32_t ms)
+{
+    uint32_t start = g_ticks;
+    <span class="kw">while</span> ((g_ticks - start) &lt; ms) { }   <span class="cm">/* spin */</span>
+}
+
+<span class="cm">/* Task1 HIGH — blinks PA0 */</span>
+<span class="kw">static void</span> task1_high(<span class="kw">void</span> *pv)
+{
+    vTaskDelay(pdMS_TO_TICKS(10));   <span class="cm">/* small head-start lets Task2 grab sem first */</span>
+    <span class="kw">for</span> (;;) {
+        xSemaphoreTake(xGpioABinarySem, portMAX_DELAY);
+        GPIOA-&gt;ODR |=  (1U &lt;&lt; 0);   vTaskDelay(pdMS_TO_TICKS(500));
+        GPIOA-&gt;ODR &amp;= ~(1U &lt;&lt; 0);   vTaskDelay(pdMS_TO_TICKS(500));
+        xSemaphoreGive(xGpioABinarySem);
+    }
+}
+
+<span class="cm">/* Task2 LOW — blinks PA1 */</span>
+<span class="kw">static void</span> task2_low(<span class="kw">void</span> *pv)
+{
+    <span class="kw">for</span> (;;) {
+        xSemaphoreTake(xGpioABinarySem, portMAX_DELAY);   <span class="cm">/* takes sem at T=0 */</span>
+        GPIOA-&gt;ODR |=  (1U &lt;&lt; 1);   vTaskDelay(pdMS_TO_TICKS(500));
+        GPIOA-&gt;ODR &amp;= ~(1U &lt;&lt; 1);   vTaskDelay(pdMS_TO_TICKS(500));
+        xSemaphoreGive(xGpioABinarySem);                   <span class="cm">/* releases sem at T=1000 */</span>
+    }
+}
+
+<span class="cm">/* Task3 MED — blinks PC13, busy-waits 5×500 ms, then sleeps once */</span>
+<span class="kw">static void</span> task3_med(<span class="kw">void</span> *pv)
+{
+    <span class="kw">for</span> (;;) {
+        <span class="kw">for</span> (uint32_t i = 0; i &lt; 5; i++) {
+            GPIOC-&gt;ODR ^= (1U &lt;&lt; 13);
+            busy_wait_ms(500);   <span class="cm">/* SPIN — never yields — starves Task2 */</span>
+        }
+        vTaskDelay(pdMS_TO_TICKS(500));   <span class="cm">/* only yields ONCE per outer loop */</span>
+    }
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    RCC-&gt;APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN;
+    gpio_output_init(GPIOA, 0);
+    gpio_output_init(GPIOA, 1);
+    gpio_output_init(GPIOC, 13);
+
+    xGpioABinarySem = xSemaphoreCreateBinary();
+    xSemaphoreGive(xGpioABinarySem);   <span class="cm">/* start it available */</span>
+
+    xTaskCreate(task1_high, <span class="rg">"T1_HIGH"</span>, configMINIMAL_STACK_SIZE, NULL, PRIO_HIGH, NULL);
+    xTaskCreate(task2_low,  <span class="rg">"T2_LOW"</span>,  configMINIMAL_STACK_SIZE, NULL, PRIO_LOW,  NULL);
+    xTaskCreate(task3_med,  <span class="rg">"T3_MED"</span>,  configMINIMAL_STACK_SIZE, NULL, PRIO_MED,  NULL);
+
+    vTaskStartScheduler();
+    <span class="kw">for</span> (;;) {}
+}</code></pre>
+</div>
+
+<hr class="div">
+
+<!-- ============================================================ -->
+<h2>What happens — the inversion sequence</h2>
+<p class="sub">step by step, before looking at the gantt</p>
+
+<p>Five events, each one setting up the next:</p>
+
+<ol>
+  <li><strong>T = 0 ms.</strong> Task2 (LOW) runs first — Task1 has a deliberate 10 ms head-start delay that gives Task2 time to call <code>xSemaphoreTake()</code> and acquire the semaphore. Task2 then calls <code>vTaskDelay(500)</code> for the PA1-on phase. Task2 is now Blocked.</li>
+  <li><strong>T ≈ 0 ms.</strong> Task3 (MED) wakes up. MED &gt; LOW, so the scheduler picks Task3 the instant Task2 blocks. Task3 enters its outer loop and calls <code>busy_wait_ms(500)</code> — a pure spin on a tick counter. It never calls <code>vTaskDelay()</code>, so it stays in Running/Ready the entire 500 ms.</li>
+  <li><strong>T ≈ 500 ms.</strong> Task1 (HIGH) wakes up (its 10 ms head-start has long expired). Task1 calls <code>xSemaphoreTake()</code>. The semaphore is held by Task2. Task1 blocks — a HIGH priority task is now waiting on a LOW priority task.</li>
+  <li><strong>T = 500 ms → T = 2500 ms.</strong> Task3 busy-waits through its remaining 4 cycles. Task2 (LOW) cannot run because Task3 (MED) is always ahead of it on the ready list. Task1 (HIGH) cannot run because the semaphore isn't available. The CPU belongs entirely to Task3 — the lowest-priority blocked task has become the de facto gatekeeper for the highest-priority running task.</li>
+  <li><strong>T ≈ 2500 ms.</strong> Task3 finally calls <code>vTaskDelay(500)</code>. Task3 is now Blocked. Task2 (LOW) is now the highest-priority Ready task. Task2 runs, finishes its PA1-off phase, calls <code>xSemaphoreGive()</code>. Task1 unblocks immediately — it has been waiting ≈2000 ms for a semaphore it couldn't get because a medium-priority task was in the way.</li>
+</ol>
+
+<hr class="div">
+
+<!-- ============================================================ -->
+<h2>Gantt chart — priority inversion (binary semaphore)</h2>
+
+<figure>
+  <svg viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-inv">
+    <title id="gantt-inv">Gantt chart showing the priority inversion: Task3 MED occupies the CPU from T=0 to T=2500ms while Task1 HIGH is blocked on a semaphore held by Task2 LOW which cannot run</title>
+    <defs><marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#5B6167"/></marker></defs>
+    <g font-family="IBM Plex Mono, monospace" font-size="12">
+
+      <!-- labels -->
+      <text x="10" y="58"  font-weight="700" fill="#35618C">Task1 HIGH</text>
+      <text x="10" y="130" font-weight="700" fill="#A05A2C">Task2 LOW</text>
+      <text x="10" y="202" font-weight="700" fill="#6E5A96">Task3 MED</text>
+      <text x="10" y="274" font-weight="700" fill="#1E2125">Semaphore</text>
+      <text x="10" y="340" font-weight="700" fill="#2E7D5B">PC13 LED</text>
+
+      <!-- time scale:  0..3000 ms maps to x=155..955, scale factor=(955-155)/3000 -->
+      <!-- 1ms = 0.2667px,  100ms = 26.67px,  500ms = 133.3px -->
+
+      <!-- TASK1 timeline -->
+      <!-- 0-10ms: brief run to call vTaskDelay(10) -->
+      <rect x="155" y="36" width="3"   height="28" fill="#35618C"/>
+      <!-- 10-500ms: sleeping (head-start delay), shown as waiting -->
+      <rect x="158" y="36" width="130" height="28" fill="#EAF1F8" stroke="#35618C" stroke-dasharray="3,3"/>
+      <text x="223" y="53" text-anchor="middle" font-size="9" fill="#35618C">sleeping (head-start)</text>
+      <!-- 500ms: tries xSemaphoreTake → BLOCKED on semaphore (held by Task2) -->
+      <rect x="288" y="36" width="534" height="28" fill="#FAECEE" stroke="#B03050" stroke-dasharray="3,3"/>
+      <text x="555" y="53" text-anchor="middle" font-size="9.5" fill="#B03050">BLOCKED on semaphore — Task1 HIGH is waiting behind Task2 LOW</text>
+      <!-- 2500+500=3000ms: sem given by Task2, Task1 runs -->
+      <rect x="822" y="36" width="133" height="28" fill="#35618C"/>
+      <text x="888" y="53" text-anchor="middle" font-size="9" fill="#fff">runs PA0</text>
+
+      <!-- TASK2 timeline -->
+      <!-- 0-10ms: brief run, takes semaphore, PA1 on, then vTaskDelay(500) -->
+      <rect x="155" y="108" width="3"   height="28" fill="#A05A2C"/>
+      <!-- 0-500ms Task2 sleeping (blocked on vTaskDelay 500) -->
+      <rect x="158" y="108" width="130" height="28" fill="#FAF0E6" stroke="#A05A2C" stroke-dasharray="3,3"/>
+      <text x="223" y="125" text-anchor="middle" font-size="9" fill="#A05A2C">holds sem, PA1 on, sleeping</text>
+      <!-- 500-2500: BLOCKED by Task3 spinning — can't run to release sem -->
+      <rect x="288" y="108" width="534" height="28" fill="#FAECEE" stroke="#B03050" stroke-dasharray="3,3"/>
+      <text x="555" y="121" text-anchor="middle" font-size="9.5" fill="#B03050">STARVED by Task3 MED — holds semaphore but cannot run</text>
+      <!-- 2500: Task3 sleeps → Task2 runs, PA1 off, gives sem -->
+      <rect x="822" y="108" width="3" height="28" fill="#A05A2C"/>
+      <text x="835" y="125" font-size="9" fill="#A05A2C">gives sem</text>
+
+      <!-- TASK3 timeline -->
+      <!-- 0-2500: 5 × 500ms busy-wait cycles -->
+      <rect x="155" y="180" width="667" height="28" fill="#6E5A96"/>
+      <text x="488" y="197" text-anchor="middle" font-size="9.5" fill="#fff">BUSY-WAIT: 5 × 500 ms spin — never yields — CPU fully consumed</text>
+      <!-- 2500-3000: vTaskDelay(500) -->
+      <rect x="822" y="180" width="133" height="28" fill="#EFEBF5" stroke="#6E5A96" stroke-dasharray="3,3"/>
+      <text x="888" y="197" text-anchor="middle" font-size="9" fill="#6E5A96">sleeping</text>
+
+      <!-- SEMAPHORE row -->
+      <!-- 0-~0ms: available, then taken by Task2 -->
+      <rect x="155" y="252" width="3"   height="28" fill="#E8F3ED" stroke="#2E7D5B"/>
+      <!-- 3ms-2500ms: held by Task2 -->
+      <rect x="158" y="252" width="663" height="28" fill="#FAF0E6" stroke="#A05A2C"/>
+      <text x="490" y="269" text-anchor="middle" font-size="9.5" fill="#A05A2C">HELD by Task2 LOW — Task1 HIGH is blocked on this</text>
+      <!-- 2500ms: given by Task2 → instantly taken by Task1 -->
+      <rect x="821" y="252" width="2"   height="28" fill="#E8F3ED" stroke="#2E7D5B"/>
+      <rect x="823" y="252" width="132" height="28" fill="#EAF1F8" stroke="#35618C"/>
+      <text x="889" y="269" text-anchor="middle" font-size="9" fill="#35618C">held T1</text>
+
+      <!-- PC13 LED row - 5 toggles during busy-wait -->
+      <rect x="155" y="316" width="134" height="28" fill="#6E5A96"/>
+      <rect x="289" y="316" width="132" height="28" fill="#EFEBF5" stroke="#6E5A96"/>
+      <rect x="421" y="316" width="133" height="28" fill="#6E5A96"/>
+      <rect x="554" y="316" width="133" height="28" fill="#EFEBF5" stroke="#6E5A96"/>
+      <rect x="687" y="316" width="134" height="28" fill="#6E5A96"/>
+
+      <!-- vertical tick marks -->
+      <g stroke="#D8DAD3" stroke-dasharray="2,3">
+        <line x1="155" y1="28" x2="155" y2="360"/>
+        <line x1="288" y1="28" x2="288" y2="360"/>
+        <line x1="422" y1="28" x2="422" y2="360"/>
+        <line x1="555" y1="28" x2="555" y2="360"/>
+        <line x1="688" y1="28" x2="688" y2="360"/>
+        <line x1="822" y1="28" x2="822" y2="360"/>
+        <line x1="955" y1="28" x2="955" y2="360"/>
+      </g>
+      <!-- time axis -->
+      <path d="M155,370 H960" stroke="#1E2125" stroke-width="1.3" fill="none" marker-end="url(#ga)"/>
+      <text x="155" y="390" text-anchor="middle" font-size="11">0</text>
+      <text x="288" y="390" text-anchor="middle" font-size="11">500</text>
+      <text x="422" y="390" text-anchor="middle" font-size="11">1000</text>
+      <text x="555" y="390" text-anchor="middle" font-size="11">1500</text>
+      <text x="688" y="390" text-anchor="middle" font-size="11">2000</text>
+      <text x="822" y="390" text-anchor="middle" font-size="11">2500</text>
+      <text x="955" y="390" text-anchor="middle" font-size="11">3000</text>
+      <text x="557" y="410" text-anchor="middle" font-size="11" fill="#9198A0">time (ms)</text>
+
+      <!-- inversion bracket -->
+      <path d="M288,14 H822" stroke="#B03050" stroke-width="1.6" fill="none"/>
+      <line x1="288" y1="10" x2="288" y2="18" stroke="#B03050" stroke-width="1.6"/>
+      <line x1="822" y1="10" x2="822" y2="18" stroke="#B03050" stroke-width="1.6"/>
+      <text x="555" y="10" text-anchor="middle" font-size="10.5" font-weight="700" fill="#B03050">PRIORITY INVERSION — Task1 HIGH blocked ~2000 ms by Task3 MED</text>
+    </g>
+  </svg>
+  <figcaption>The red zone is the inversion window. Task1 (the highest-priority task in the system) cannot run, not because its own work is done, but because a medium-priority task is spinning in the way of the low-priority task that holds the resource Task1 needs.</figcaption>
+</figure>
+
+<div class="warn">
+  <b>What the Gantt makes visible:</b> Task3 (MED) never touches the semaphore, never interacts with Task1 or Task2 directly — and yet it is the effective cause of Task1's 2000 ms delay. That indirection is what makes priority inversion hard to spot in real systems: the task that suffers (Task1) and the task that causes the suffering (Task3) have no direct relationship at all.
+</div>
+
+<hr class="div">
+
+<!-- ============================================================ -->
+<h2>The fix — replace binary semaphore with a mutex</h2>
+<p class="sub">one line changed, priority inheritance enabled</p>
+
+<p>A FreeRTOS mutex created with <code>xSemaphoreCreateMutex()</code> carries a priority inheritance mechanism built into the kernel. When a task attempts to take the mutex and blocks, the kernel checks the priority of the waiter. If it is higher than the current holder, the holder's priority is temporarily raised to match — so it can run, finish, and release the mutex as soon as the CPU is available, rather than being stuck behind every medium-priority task in the system.</p>
+
+<div class="listing">
+  <p class="fname">priority-inversion/main.c — the one-line fix</p>
+  <pre><code><span class="cm">/* BEFORE: binary semaphore — no priority awareness */</span>
+xGpioABinarySem = xSemaphoreCreateBinary();
+xSemaphoreGive(xGpioABinarySem);   <span class="cm">/* must pre-give a binary semaphore */</span>
+
+<span class="cm">/* AFTER: mutex — priority inheritance included */</span>
+xGpioABinarySem = xSemaphoreCreateMutex();
+<span class="cm">/* a mutex starts available — no pre-give needed */</span></code></pre>
+</div>
+
+<p class="aside"><b>Also drop the handle rename.</b> Rename <code>xGpioABinarySem</code> to <code>xGpioAMutex</code> in your own source for clarity — the type is the same <code>SemaphoreHandle_t</code>, the APIs (<code>xSemaphoreTake</code> / <code>xSemaphoreGive</code>) are the same, the mutex just adds the inheritance behaviour under the hood.</p>
+
+<!-- ============================================================ -->
+<h2>Gantt chart — with priority inheritance (mutex)</h2>
+
+<figure>
+  <svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="gantt-fix">
+    <title id="gantt-fix">Gantt chart with mutex priority inheritance: when Task1 HIGH blocks on the mutex, Task2 LOW is boosted to HIGH priority so it can preempt Task3 MED, finish, and release the mutex promptly</title>
+    <g font-family="IBM Plex Mono, monospace" font-size="12">
+
+      <text x="10" y="58"  font-weight="700" fill="#35618C">Task1 HIGH</text>
+      <text x="10" y="130" font-weight="700" fill="#A05A2C">Task2 LOW</text>
+      <text x="10" y="202" font-weight="700" fill="#6E5A96">Task3 MED</text>
+      <text x="10" y="274" font-weight="700" fill="#1E2125">Mutex</text>
+
+      <!-- same scale as above: 0..3000ms -> x=155..955 -->
+
+      <!-- TASK1 -->
+      <rect x="155" y="36" width="3"   height="28" fill="#35618C"/>
+      <rect x="158" y="36" width="130" height="28" fill="#EAF1F8" stroke="#35618C" stroke-dasharray="3,3"/>
+      <text x="223" y="53" text-anchor="middle" font-size="9" fill="#35618C">sleeping (head-start)</text>
+      <!-- 500ms: tries mutex → blocks, but kernel boosts Task2 to HIGH -->
+      <rect x="288" y="36" width="55"  height="28" fill="#FAECEE" stroke="#B03050" stroke-dasharray="3,3"/>
+      <text x="315" y="53" text-anchor="middle" font-size="8.5" fill="#B03050">waits ~200ms</text>
+      <!-- Task2 finishes fast (boosted), gives mutex, Task1 runs -->
+      <rect x="343" y="36" width="612" height="28" fill="#35618C"/>
+      <text x="649" y="53" text-anchor="middle" font-size="9.5" fill="#fff">Task1 runs normally — PA0 blink</text>
+
+      <!-- TASK2 -->
+      <rect x="155" y="108" width="3"  height="28" fill="#A05A2C"/>
+      <rect x="158" y="108" width="130" height="28" fill="#FAF0E6" stroke="#A05A2C" stroke-dasharray="3,3"/>
+      <text x="223" y="125" text-anchor="middle" font-size="9" fill="#A05A2C">holds mutex, sleeping</text>
+      <!-- at 500ms: Task1 blocks on mutex → kernel raises Task2 to HIGH -->
+      <!-- Task2 is boosted and PREEMPTS Task3 (boosted HIGH > MED) -->
+      <rect x="288" y="108" width="55" height="28" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.5"/>
+      <text x="315" y="125" text-anchor="middle" font-size="8.5" fill="#2E7D5B">BOOSTED runs</text>
+      <!-- gives mutex, drops back to LOW -->
+      <rect x="343" y="108" width="3"  height="28" fill="#A05A2C"/>
+      <rect x="346" y="108" width="609" height="28" fill="#FAF0E6" stroke="#A05A2C" stroke-dasharray="3,3"/>
+      <text x="650" y="125" text-anchor="middle" font-size="9" fill="#A05A2C">back to LOW, waiting for mutex</text>
+
+      <!-- TASK3 -->
+      <!-- 0-500ms: busy-wait first cycle -->
+      <rect x="155" y="180" width="133" height="28" fill="#6E5A96"/>
+      <text x="221" y="197" text-anchor="middle" font-size="9" fill="#fff">busy-wait</text>
+      <!-- 500-~520ms: PREEMPTED by boosted Task2 -->
+      <rect x="288" y="180" width="55" height="28" fill="#EFEBF5" stroke="#6E5A96" stroke-dasharray="3,3"/>
+      <text x="315" y="197" text-anchor="middle" font-size="8.5" fill="#6E5A96">preempted</text>
+      <!-- resumes after Task2 finishes, finishes remaining 4 cycles -->
+      <rect x="343" y="180" width="479" height="28" fill="#6E5A96"/>
+      <text x="582" y="197" text-anchor="middle" font-size="9.5" fill="#fff">resumes busy-wait — remaining cycles</text>
+      <rect x="822" y="180" width="133" height="28" fill="#EFEBF5" stroke="#6E5A96" stroke-dasharray="3,3"/>
+      <text x="888" y="197" text-anchor="middle" font-size="9" fill="#6E5A96">sleeping</text>
+
+      <!-- MUTEX row -->
+      <rect x="155" y="252" width="3"   height="28" fill="#E8F3ED" stroke="#2E7D5B"/>
+      <rect x="158" y="252" width="130" height="28" fill="#FAF0E6" stroke="#A05A2C"/>
+      <text x="223" y="269" text-anchor="middle" font-size="9" fill="#A05A2C">held by Task2</text>
+      <!-- boost + quick run -->
+      <rect x="288" y="252" width="55"  height="28" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.5"/>
+      <text x="315" y="269" text-anchor="middle" font-size="8.5" fill="#2E7D5B">boosted</text>
+      <!-- given to Task1 -->
+      <rect x="343" y="252" width="2"   height="28" fill="#E8F3ED" stroke="#2E7D5B"/>
+      <rect x="345" y="252" width="610" height="28" fill="#EAF1F8" stroke="#35618C"/>
+      <text x="650" y="269" text-anchor="middle" font-size="9" fill="#35618C">held by Task1</text>
+
+      <!-- boost annotation arrow -->
+      <path d="M288,175 V164" stroke="#2E7D5B" stroke-width="1.4" fill="none" marker-end="url(#ga)"/>
+      <text x="290" y="162" font-size="9.5" font-weight="700" fill="#2E7D5B">Task2 boosted to HIGH — preempts Task3</text>
+
+      <!-- ticks -->
+      <g stroke="#D8DAD3" stroke-dasharray="2,3">
+        <line x1="155" y1="28" x2="155" y2="310"/>
+        <line x1="288" y1="28" x2="288" y2="310"/>
+        <line x1="343" y1="28" x2="343" y2="310"/>
+        <line x1="422" y1="28" x2="422" y2="310"/>
+        <line x1="555" y1="28" x2="555" y2="310"/>
+        <line x1="822" y1="28" x2="822" y2="310"/>
+        <line x1="955" y1="28" x2="955" y2="310"/>
+      </g>
+      <path d="M155,325 H960" stroke="#1E2125" stroke-width="1.3" fill="none" marker-end="url(#ga)"/>
+      <text x="155" y="345" text-anchor="middle" font-size="11">0</text>
+      <text x="288" y="345" text-anchor="middle" font-size="11">500</text>
+      <text x="422" y="345" text-anchor="middle" font-size="11">1000</text>
+      <text x="555" y="345" text-anchor="middle" font-size="11">1500</text>
+      <text x="822" y="345" text-anchor="middle" font-size="11">2500</text>
+      <text x="955" y="345" text-anchor="middle" font-size="11">3000</text>
+      <text x="557" y="365" text-anchor="middle" font-size="11" fill="#9198A0">time (ms)</text>
+    </g>
+    <defs><marker id="ga" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#5B6167"/></marker></defs>
+  </svg>
+  <figcaption>The inversion window collapses from ~2000 ms to ~200 ms. Task2 is temporarily elevated to Task1's priority, preempts Task3's busy-wait, finishes its blink, gives the mutex, and drops back to LOW. Task1 gets the mutex almost immediately.</figcaption>
+</figure>
+
+<h2>How priority inheritance works, precisely</h2>
+<p>Five kernel actions, triggered automatically the moment <code>xSemaphoreTake()</code> blocks on a held mutex:</p>
+<ol>
+  <li><strong>Task1 (HIGH) calls <code>xSemaphoreTake()</code></strong> and finds the mutex is held by Task2 (LOW). It cannot proceed.</li>
+  <li><strong>The kernel reads the priority of the blocked waiter</strong> (Task1 = HIGH = 3) and compares it with the mutex holder's current priority (Task2 = LOW = 1).</li>
+  <li><strong>The kernel raises Task2's priority to 3</strong> — Task1's level. Task2 is now effectively a HIGH priority task in the scheduler's view.</li>
+  <li><strong>Task2 (now boosted to HIGH) preempts Task3 (MED = 2)</strong> because 3 &gt; 2. Task2 finishes its blink, calls <code>xSemaphoreGive()</code>.</li>
+  <li><strong>The mutex is given, Task1 unblocks, Task2's priority is restored to LOW (1)</strong>. The kernel undoes the temporary boost at the exact moment ownership transfers.</li>
+</ol>
+
+<p>Priority inheritance doesn't remove the wait entirely — Task1 still has to wait for Task2 to finish its current blink operation. What it removes is the <em>unbounded</em> wait: the inversion window is now bounded by Task2's own work, not by however long Task3 decides to spin.</p>
+
+<div class="footline">stm32f103 workspace notes &middot; priority-inversion project &middot; FreeRTOS binary semaphore vs. mutex</div>
+
+</article>
+</body>
+</html>

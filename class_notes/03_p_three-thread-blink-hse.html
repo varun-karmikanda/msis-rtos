@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>three-thread-blink_hse, explained</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --panel:   #F3F4F0;
+    --accent:  #35618C;
+    --accent-bg:#EAF1F8;
+    --run:     #2E7D5B;
+    --run-bg:  #E8F3ED;
+    --block:   #A05A2C;
+    --block-bg:#FAF0E6;
+    --purple:  #6E5A96;
+    --purple-bg:#EFEBF5;
+    --code-bg: #232830;
+    --code-ink:#D7DCE1;
+    --code-dim:#7C8794;
+    --code-acc:#8FBCE6;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+  a{ color:var(--accent); }
+
+  .layout{ max-width:1240px; margin:0 auto; display:flex; align-items:flex-start; }
+  .toc{ position:sticky; top:0; align-self:flex-start; width:230px; flex:0 0 230px; height:100vh; overflow-y:auto; padding:32px 16px 32px 26px; border-right:1px solid var(--rule); box-sizing:border-box; }
+  .toc-kicker{ font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink-dim); margin:0 0 14px; }
+  .toc ol{ list-style:none; margin:0; padding:0; counter-reset:toc; }
+  .toc li{ counter-increment:toc; margin-bottom:2px; }
+  .toc a{ display:flex; gap:9px; padding:6px 8px; border-radius:6px; color:var(--ink-soft); font-size:12.5px; text-decoration:none; line-height:1.35; }
+  .toc a:hover{ background:var(--accent-bg); color:var(--accent); }
+  .toc a::before{ content: counter(toc, decimal-leading-zero); font-family:var(--mono); font-size:10.5px; color:var(--ink-dim); padding-top:1px; }
+
+  main{ padding:56px 50px 110px; min-width:0; flex:1 1 auto; }
+  .cover{ margin-bottom:48px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:31px; font-weight:700; line-height:1.22; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17.5px; color:var(--ink-soft); max-width:70ch; margin:0; }
+
+  p{ max-width:74ch; margin:0 0 16px; }
+  ul,ol.steps{ margin:0 0 16px; padding-left:22px; max-width:72ch; }
+  li{ margin-bottom:6px; }
+
+  section.topic{ padding-top:48px; border-top:1px solid var(--rule); scroll-margin-top:20px; }
+  section.topic:first-of-type{ border-top:none; }
+  .topic-head{ display:flex; align-items:baseline; gap:14px; margin-bottom:18px; }
+  .topic-num{ font-family:var(--mono); font-size:13px; color:var(--accent); background:var(--accent-bg); border-radius:5px; padding:3px 9px; flex:none; }
+  .topic-head h2{ font-size:22px; font-weight:700; margin:0; letter-spacing:-.01em; }
+  h3{ font-size:15.5px; font-weight:700; margin:32px 0 10px; font-family:var(--mono); }
+
+  figure{ margin:22px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-top:10px; max-width:76ch; }
+
+  table{ width:100%; border-collapse:collapse; margin:14px 0 22px; font-size:14px; }
+  th,td{ text-align:left; padding:8px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:10.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); border-bottom:1.5px solid var(--ink); }
+  td.reg{ font-family:var(--mono); font-size:12.5px; color:var(--accent); white-space:nowrap; }
+
+  .listing{ background:var(--code-bg); border-radius:9px; padding:16px 20px; margin:16px 0 22px; overflow-x:auto; }
+  .listing .fname{ font-family:var(--mono); font-size:11px; color:var(--code-dim); margin:0 0 10px; }
+  .listing pre{ margin:0; }
+  .listing code{ background:none; padding:0; color:var(--code-ink); font-size:12.5px; line-height:1.7; display:block; white-space:pre; }
+  .cm{ color:var(--code-dim); }
+  .rg{ color:var(--code-acc); }
+  .kw{ color:#E3B778; }
+
+  .rmnote{ display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11.5px; color:var(--block); background:var(--block-bg); padding:2px 9px; border-radius:20px; margin:2px 4px 2px 0; }
+
+  .steps{ counter-reset:step; list-style:none; padding-left:0; }
+  .steps li{ counter-increment:step; position:relative; padding-left:38px; margin-bottom:12px; }
+  .steps li::before{ content: counter(step); position:absolute; left:0; top:1px; width:22px; height:22px; border-radius:50%; background:var(--ink); color:var(--bg); font-family:var(--mono); font-size:11px; font-weight:600; display:flex; align-items:center; justify-content:center; }
+
+  .aside{ border-left:2px solid var(--accent-bg); padding-left:16px; margin:20px 0; font-size:15.5px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+
+  .footline{ margin-top:60px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+
+  @media (max-width:900px){
+    .layout{ flex-direction:column; }
+    .toc{ width:100%; flex-basis:auto; position:relative; height:auto; border-right:none; border-bottom:1px solid var(--rule); }
+    main{ padding:36px 22px 80px; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <nav class="toc" aria-label="Table of contents">
+    <p class="toc-kicker">contents</p>
+    <ol>
+      <li><a href="#overview">What's different</a></li>
+      <li><a href="#makefile">Makefile</a></li>
+      <li><a href="#config">FreeRTOSConfig.h</a></li>
+      <li><a href="#mainc">main.c</a></li>
+      <li><a href="#clock">Clock setup, step by step</a></li>
+      <li><a href="#sleep">The sleeping idle task</a></li>
+      <li><a href="#pipeline">Compiling and linking</a></li>
+      <li><a href="#build">Build and flash</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <div class="cover">
+      <p class="byline">stm32f103 workspace notes</p>
+      <h1>three-thread-blink_hse, explained</h1>
+      <p class="dek">The same three LED tasks as <code>three-thread-blink</code>, run at 72&#8202;MHz off the external crystal instead of the default 8&#8202;MHz internal oscillator, with the idle task actually asleep between ticks instead of spinning.</p>
+    </div>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="overview">
+      <div class="topic-head"><span class="topic-num">1</span><h2>What's different</h2></div>
+      <p>Three files exist in this project; everything else - <code>startup_stm32f103.s</code>, <code>stm32f103.ld</code>, <code>common.mk</code> - is untouched, shared with every other project in the workspace.</p>
+      <table>
+        <thead><tr><th>File</th><th>Changed from three-thread-blink</th></tr></thead>
+        <tbody>
+          <tr><td><code>Makefile</code></td><td>Only <code>PROJECT</code>'s name - the build rules are identical</td></tr>
+          <tr><td><code>FreeRTOSConfig.h</code></td><td><code>configCPU_CLOCK_HZ</code> is 72&#8202;MHz, not 8&#8202;MHz; <code>configUSE_IDLE_HOOK</code> is now 1</td></tr>
+          <tr><td><code>main.c</code></td><td>Adds <code>clock_setup_hse_pll_72mhz()</code> and <code>vApplicationIdleHook()</code>; the three LED tasks themselves are byte-for-byte the same</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="makefile">
+      <div class="topic-head"><span class="topic-num">2</span><h2>Makefile</h2></div>
+      <div class="listing">
+        <p class="fname">three-thread-blink_hse/Makefile - complete</p>
+        <pre><code>ROOT_DIR     := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))..)
+PROJECT      := three-thread-blink_hse
+
+FREERTOS_DIR := $(ROOT_DIR)/FreeRTOS
+
+SRCS := main.c
+SRCS += $(FREERTOS_DIR)/tasks.c
+SRCS += $(FREERTOS_DIR)/list.c
+SRCS += $(FREERTOS_DIR)/queue.c
+SRCS += $(FREERTOS_DIR)/portable/GCC/ARM_CM3/port.c
+SRCS += $(FREERTOS_DIR)/portable/MemMang/heap_4.c
+<span class="cm"># timers.c intentionally omitted - configUSE_TIMERS is 0 below</span>
+
+EXTRA_CFLAGS := -I$(FREERTOS_DIR)/include
+EXTRA_CFLAGS += -I$(FREERTOS_DIR)/portable/GCC/ARM_CM3
+EXTRA_CFLAGS += -I.
+
+include $(ROOT_DIR)/common/common.mk</code></pre>
+      </div>
+      <p>Identical in shape to <code>three-thread-blink/Makefile</code> - same five FreeRTOS sources, same include paths, same shared <code>common.mk</code>. The clock change and the sleep change are both pure application code; neither one needed a different set of source files or a different linker script. <code>PROJECT</code> is the only line that had to change, since it names the output files.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="config">
+      <div class="topic-head"><span class="topic-num">3</span><h2>FreeRTOSConfig.h</h2></div>
+      <div class="listing">
+        <p class="fname">three-thread-blink_hse/FreeRTOSConfig.h (trimmed)</p>
+        <pre><code><span class="cm">// this MUST match whatever SYSCLK actually ends up at</span>
+<span class="kw">#define</span> configCPU_CLOCK_HZ              72000000UL
+<span class="kw">#define</span> configTICK_RATE_HZ              1000
+<span class="kw">#define</span> configTOTAL_HEAP_SIZE           (4 * 1024)
+
+<span class="kw">#define</span> configUSE_IDLE_HOOK             1   <span class="cm">// -> vApplicationIdleHook() sleeps the CPU</span>
+<span class="kw">#define</span> configUSE_TICK_HOOK             0
+
+<span class="cm">// bridges startup.s's vector names to FreeRTOS's own (unchanged)</span>
+<span class="kw">#define</span> vPortSVCHandler      SVC_Handler
+<span class="kw">#define</span> xPortPendSVHandler   PendSV_Handler
+<span class="kw">#define</span> xPortSysTickHandler  SysTick_Handler</code></pre>
+      </div>
+      <p>Two lines actually differ from <code>three-thread-blink</code>'s config, and both matter more than their size suggests.</p>
+      <ul>
+        <li><code>configCPU_CLOCK_HZ</code> - not read from hardware, ever. It's a number FreeRTOS trusts completely, and it feeds straight into the SysTick reload calculation inside the port layer: <code>(configCPU_CLOCK_HZ / configTICK_RATE_HZ) - 1</code>. Change the clock without changing this constant and every <code>vTaskDelay()</code> in the program silently runs 9&#215; too fast or too slow.</li>
+        <li><code>configUSE_IDLE_HOOK</code> - flips on the single call to <code>vApplicationIdleHook()</code> that <code>tasks.c</code>'s idle task makes every time it runs. Without this, the function in <code>main.c</code> would compile fine and simply never be called.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="mainc">
+      <div class="topic-head"><span class="topic-num">4</span><h2>main.c</h2></div>
+      <p>Structurally the same file as <code>three-thread-blink/main.c</code> - the <code>led_task_args_t</code> struct, <code>gpio_output_init()</code>, and <code>led_task()</code> are unchanged. Two things are added: a clock-configuration function called once at the very top of <code>main()</code>, and an idle hook at the bottom.</p>
+
+      <div class="listing">
+        <p class="fname">three-thread-blink_hse/main.c - main() and the two new pieces (trimmed)</p>
+        <pre><code><span class="kw">static void</span> clock_setup_hse_pll_72mhz(<span class="kw">void</span>)
+{
+    <span class="cm">/* five steps - see the walkthrough below */</span>
+}
+
+<span class="kw">int</span> main(<span class="kw">void</span>)
+{
+    clock_setup_hse_pll_72mhz();                 <span class="cm">// (1) do this FIRST</span>
+
+    RCC-&gt;APB2ENR |= RCC_APB2ENR_IOPAEN | RCC_APB2ENR_IOPCEN;
+    gpio_output_init(led_a.port, led_a.pin);
+    gpio_output_init(led_b.port, led_b.pin);
+    gpio_output_init(led_c.port, led_c.pin);
+
+    xTaskCreate(led_task, "led_1s", configMINIMAL_STACK_SIZE, (<span class="kw">void</span> *)&amp;led_a, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_2s", configMINIMAL_STACK_SIZE, (<span class="kw">void</span> *)&amp;led_b, tskIDLE_PRIORITY + 1, NULL);
+    xTaskCreate(led_task, "led_3s", configMINIMAL_STACK_SIZE, (<span class="kw">void</span> *)&amp;led_c, tskIDLE_PRIORITY + 1, NULL);
+
+    vTaskStartScheduler();
+    <span class="kw">for</span> (;;) { }
+}
+
+<span class="kw">void</span> vApplicationIdleHook(<span class="kw">void</span>)              <span class="cm">// (2) called every idle-task run</span>
+{
+    __asm <span class="kw">volatile</span> ("wfi");
+}</code></pre>
+      </div>
+
+      <p>Notice where <code>clock_setup_hse_pll_72mhz()</code> is called: before anything else, including the GPIO clock-enable. Nothing downstream can safely assume a clock speed until this function has either finished switching to 72&#8202;MHz or given up and left the chip on HSI - the two deep dives below cover each addition in full.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="clock">
+      <div class="topic-head"><span class="topic-num">5</span><h2>Clock setup, step by step</h2></div>
+      <p><span class="rmnote">RM0008 &sect;7.3</span> is the source for this whole sequence. Five steps, each one gated on the previous one actually finishing - there's no way to skip ahead, because each step's register write is only valid once the one before it has taken effect in hardware.</p>
+
+      <figure>
+        <svg viewBox="0 0 1000 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="clk-t">
+          <title id="clk-t">Five-step sequence bringing the chip from default HSI up to HSE+PLL at 72MHz</title>
+          <defs><marker id="cm1" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker></defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+
+            <rect x="0" y="0" width="1000" height="70" rx="6" fill="#F3F4F0" stroke="#D8DAD3"/>
+            <text x="20" y="30" font-weight="700">Reset default: running on HSI, 8&#8202;MHz, 0 flash wait states</text>
+            <text x="20" y="50" font-size="10.5" fill="#5B6167">every other project in this workspace never leaves this state</text>
+
+            <path d="M500,70 V95" stroke="#9198A0" stroke-width="1.3" marker-end="url(#cm1)"/>
+
+            <!-- step 1 -->
+            <rect x="20" y="100" width="960" height="80" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/>
+            <text x="40" y="124" font-weight="700">1. RCC-&gt;CR |= RCC_CR_HSEON;  wait for RCC_CR_HSERDY</text>
+            <text x="40" y="142" font-size="10.5" fill="#35618C">starts the external 8&#8202;MHz crystal - it needs time to physically stabilize</text>
+            <text x="40" y="158" font-size="10.5" fill="#5B6167">bounded wait: no crystal fitted -&gt; times out -&gt; function returns, chip stays on HSI</text>
+
+            <path d="M500,180 V205" stroke="#9198A0" stroke-width="1.3" marker-end="url(#cm1)"/>
+
+            <!-- step 2 -->
+            <rect x="20" y="210" width="960" height="70" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+            <text x="40" y="234" font-weight="700">2. FLASHREGS-&gt;ACR = FLASH_ACR_PRFTBE | FLASH_ACR_LATENCY_2WS;</text>
+            <text x="40" y="252" font-size="10.5" fill="#A05A2C">flash can't be read fast enough at 72&#8202;MHz without 2 wait states - must be set BEFORE the clock actually rises</text>
+            <text x="40" y="268" font-size="9.5" fill="#5B6167">RM0008: 0 WS up to 24 MHz, 1 WS to 48 MHz, 2 WS to 72 MHz</text>
+
+            <path d="M500,280 V305" stroke="#9198A0" stroke-width="1.3" marker-end="url(#cm1)"/>
+
+            <!-- step 3 -->
+            <rect x="20" y="310" width="960" height="90" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/>
+            <text x="40" y="334" font-weight="700">3. RCC-&gt;CFGR = PPRE1_DIV2 | PLLSRC_HSE | PLLXTPRE_DIV1 | PLLMUL_9;</text>
+            <text x="40" y="352" font-size="10.5" fill="#35618C">APB1 pre-divided to 36&#8202;MHz (its ceiling); PLL source and multiplier picked -</text>
+            <text x="40" y="368" font-size="10.5" fill="#35618C">safe to write now because SYSCLK is still HSI, untouched</text>
+            <text x="40" y="384" font-size="9.5" fill="#5B6167">8 MHz HSE x 9 = 72 MHz - the PLL itself is not enabled yet</text>
+
+            <path d="M500,400 V425" stroke="#9198A0" stroke-width="1.3" marker-end="url(#cm1)"/>
+
+            <!-- step 4 -->
+            <rect x="20" y="430" width="960" height="70" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+            <text x="40" y="454" font-weight="700">4. RCC-&gt;CR |= RCC_CR_PLLON;  wait for RCC_CR_PLLRDY</text>
+            <text x="40" y="472" font-size="10.5" fill="#A05A2C">the PLL needs time to lock onto 72&#8202;MHz before anything can use its output</text>
+            <text x="40" y="488" font-size="9.5" fill="#5B6167">unbounded wait here - by this point HSE is confirmed present, so this will complete</text>
+
+            <path d="M500,500 V525" stroke="#9198A0" stroke-width="1.3" marker-end="url(#cm1)"/>
+
+            <!-- step 5 -->
+            <rect x="20" y="530" width="960" height="80" rx="6" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.6"/>
+            <text x="40" y="554" font-weight="700">5. RCC-&gt;CFGR (SW bits) = RCC_CFGR_SW_PLL;  wait for SWS == SWS_PLL</text>
+            <text x="40" y="572" font-size="10.5" fill="#2E7D5B">this is the actual moment SYSCLK becomes 72 MHz - everything before this was preparation</text>
+            <text x="40" y="588" font-size="10.5" fill="#2E7D5B">SWS mirrors SW once the switch has genuinely completed in hardware, not just requested</text>
+          </g>
+        </svg>
+        <figcaption>Every wait loop here is polling a status bit the hardware sets - there is no fixed delay anywhere in this function, only "wait until true."</figcaption>
+      </figure>
+
+      <h3>Why this exact order</h3>
+      <ul>
+        <li><b>Flash latency before the switch, not after.</b> Step 2 happens while the core is still running at 8&#8202;MHz - slow enough that flash keeps up regardless of the latency setting. If the clock rose to 72&#8202;MHz first, the very next instruction fetch could already be too fast for 0-wait-state flash to service correctly.</li>
+        <li><b>PLL configuration before PLL enable.</b> <code>RCC_CFGR</code>'s <code>PLLSRC</code>/<code>PLLXTPRE</code>/<code>PLLMUL</code> fields are only permitted to change while the PLL is <em>off</em> - RM0008 is explicit about this. Step 3 sets them; step 4 is the first point <code>PLLON</code> is touched.</li>
+        <li><b>SW is the last thing touched.</b> Everything before step 5 can be undone or was never visible to the running program - the CPU is still executing at the original 8&#8202;MHz HSI rate right up until the <code>SW</code> write actually commits.</li>
+      </ul>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="sleep">
+      <div class="topic-head"><span class="topic-num">6</span><h2>The sleeping idle task</h2></div>
+      <p>FreeRTOS always creates one extra task you didn't ask for: the idle task, priority 0, the lowest in the system. It runs whenever - and only whenever - none of your own tasks are Ready. In <code>three-thread-blink</code>, that idle task's body is effectively an empty loop. Here, it does one thing differently.</p>
+
+      <figure>
+        <svg viewBox="0 0 1000 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="sleep-t">
+          <title id="sleep-t">Comparing the default spinning idle task against the WFI-sleeping one</title>
+          <g font-family="IBM Plex Mono, monospace" font-size="12">
+
+            <text x="10" y="24" font-weight="700" font-size="13" fill="#A05A2C">three-thread-blink - default idle behaviour</text>
+            <rect x="10" y="36" width="960" height="90" rx="6" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+            <!-- busy tick marks -->
+            <g fill="#A05A2C">
+              <rect x="30" y="60" width="40" height="40"/><rect x="80" y="60" width="40" height="40"/><rect x="130" y="60" width="40" height="40"/>
+              <rect x="180" y="60" width="40" height="40"/><rect x="230" y="60" width="40" height="40"/><rect x="280" y="60" width="40" height="40"/>
+              <rect x="330" y="60" width="40" height="40"/><rect x="380" y="60" width="40" height="40"/><rect x="430" y="60" width="40" height="40"/>
+              <rect x="480" y="60" width="40" height="40"/><rect x="530" y="60" width="40" height="40"/><rect x="580" y="60" width="40" height="40"/>
+              <rect x="630" y="60" width="40" height="40"/><rect x="680" y="60" width="40" height="40"/><rect x="730" y="60" width="40" height="40"/>
+              <rect x="780" y="60" width="40" height="40"/><rect x="830" y="60" width="40" height="40"/><rect x="880" y="60" width="40" height="40"/>
+            </g>
+            <text x="500" y="112" text-anchor="middle" fill="#fff" font-size="10.5">core continuously fetching and executing instructions - fully powered, the whole time</text>
+
+            <text x="10" y="164" font-weight="700" font-size="13" fill="#2E7D5B">three-thread-blink_hse - vApplicationIdleHook() with wfi</text>
+            <rect x="10" y="176" width="960" height="90" rx="6" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+            <rect x="30" y="200" width="15" height="40" fill="#2E7D5B"/>
+            <rect x="935" y="200" width="15" height="40" fill="#2E7D5B"/>
+            <line x1="45" y1="220" x2="935" y2="220" stroke="#2E7D5B" stroke-width="1.3" stroke-dasharray="5,4"/>
+            <text x="490" y="216" text-anchor="middle" fill="#2E7D5B" font-size="10.5">core halted - clock gated, zero instructions executing</text>
+            <text x="490" y="250" text-anchor="middle" fill="#2E7D5B" font-size="10.5">wakes only on the next exception (in steady state: SysTick, 1 ms later)</text>
+
+            <text x="10" y="300" font-size="11" fill="#9198A0">not full tickless idle - SysTick keeps firing at a fixed 1 kHz either way, so the core</text>
+            <text x="10" y="316" font-size="11" fill="#9198A0">still wakes 1000 times a second. wfi just means it isn't burning cycles between those wake-ups.</text>
+          </g>
+        </svg>
+        <figcaption>Same scheduling behaviour either way - the idle task still only runs when nothing else is Ready. What changes is whether the core does real work while it's "running."</figcaption>
+      </figure>
+
+      <div class="listing">
+        <p class="fname">three-thread-blink_hse/main.c - vApplicationIdleHook</p>
+        <pre><code><span class="kw">void</span> vApplicationIdleHook(<span class="kw">void</span>)
+{
+    __asm <span class="kw">volatile</span> ("wfi");   <span class="cm">// Wait For Interrupt - halts the core</span>
+}</code></pre>
+      </div>
+
+      <p><code>wfi</code> is a single Cortex-M3 instruction, not a library call - it needs no CMSIS intrinsic, just the inline assembly line above. Architecturally, if an interrupt is already pending the instant <code>wfi</code> executes, the core is guaranteed to fall straight through instead of sleeping through a missed event - which is what makes it safe to call unconditionally here, with no extra interrupt-masking logic needed around it.</p>
+
+      <p class="aside"><b>Why not full tickless idle.</b> FreeRTOS's <code>configUSE_TICKLESS_IDLE</code> goes further - it stops SysTick entirely during long idle stretches and reprograms it to fire exactly when the next task is due, so the core can sleep for seconds instead of milliseconds. That's real additional complexity: computing the next wake time, handling the race between "decide to sleep" and "an interrupt arrives," correcting the tick count on wake. This project takes the simpler win instead - the tick keeps running, so there's no race to get wrong, and the core still spends the overwhelming majority of every millisecond genuinely asleep rather than spinning.</p>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="pipeline">
+      <div class="topic-head"><span class="topic-num">7</span><h2>Compiling and linking</h2></div>
+      <p>Identical pipeline to every other project in this workspace - the clock and sleep changes are pure application C, not new source files or a different linker script.</p>
+
+      <figure>
+        <svg viewBox="0 0 1060 400" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="pipe-t">
+          <title id="pipe-t">Compilation and linking pipeline for three-thread-blink_hse</title>
+          <defs><marker id="pm" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker></defs>
+          <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+
+            <text x="10" y="20" font-weight="700" font-size="12.5">sources</text>
+            <rect x="10" y="32" width="200" height="30" rx="5" fill="#EAF1F8" stroke="#35618C"/><text x="24" y="52">main.c</text>
+            <text x="10" y="80" font-size="9.5" fill="#9198A0">clock_setup_hse_pll_72mhz()</text>
+            <text x="10" y="94" font-size="9.5" fill="#9198A0">and vApplicationIdleHook()</text>
+            <text x="10" y="108" font-size="9.5" fill="#9198A0">both live in this one file</text>
+
+            <rect x="10" y="128" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="148">FreeRTOS/tasks.c</text>
+            <rect x="10" y="162" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="182">FreeRTOS/list.c</text>
+            <rect x="10" y="196" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="216">FreeRTOS/queue.c</text>
+            <rect x="10" y="230" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="250">.../ARM_CM3/port.c</text>
+            <rect x="10" y="264" width="200" height="30" rx="5" fill="#FAF0E6" stroke="#A05A2C"/><text x="24" y="284">.../MemMang/heap_4.c</text>
+            <rect x="10" y="300" width="200" height="30" rx="5" fill="#F3F4F0" stroke="#9198A0"/><text x="24" y="320">common/startup_stm32f103.s</text>
+
+            <path d="M210,47 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+            <path d="M210,143 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+            <path d="M210,177 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+            <path d="M210,211 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+            <path d="M210,245 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+            <path d="M210,279 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+            <path d="M210,315 H290" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+
+            <rect x="290" y="20" width="220" height="310" rx="8" fill="#fff" stroke="#1E2125" stroke-width="1.4"/>
+            <text x="400" y="44" text-anchor="middle" font-weight="700">arm-none-eabi-gcc</text>
+            <text x="400" y="60" text-anchor="middle" font-size="10" fill="#5B6167">compiles each file separately</text>
+            <text x="400" y="76" text-anchor="middle" font-size="10" fill="#5B6167">-c, one .o per .c or .s</text>
+            <text x="400" y="100" text-anchor="middle" font-size="10.5" fill="#35618C">wfi assembled straight into</text>
+            <text x="400" y="118" text-anchor="middle" font-size="10.5" fill="#35618C">main.o - no library call needed</text>
+
+            <rect x="330" y="150" width="140" height="150" rx="6" fill="#F3F4F0" stroke="#D8DAD3" stroke-dasharray="3,3"/>
+            <text x="400" y="170" text-anchor="middle" font-size="10" fill="#9198A0">build/*.o</text>
+            <text x="400" y="188" text-anchor="middle" font-size="10" fill="#9198A0">main.o</text>
+            <text x="400" y="204" text-anchor="middle" font-size="10" fill="#9198A0">tasks.o</text>
+            <text x="400" y="220" text-anchor="middle" font-size="10" fill="#9198A0">list.o</text>
+            <text x="400" y="236" text-anchor="middle" font-size="10" fill="#9198A0">queue.o</text>
+            <text x="400" y="252" text-anchor="middle" font-size="10" fill="#9198A0">port.o</text>
+            <text x="400" y="268" text-anchor="middle" font-size="10" fill="#9198A0">heap_4.o</text>
+            <text x="400" y="284" text-anchor="middle" font-size="10" fill="#9198A0">startup_stm32f103.o</text>
+
+            <path d="M510,175 H590" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+
+            <rect x="590" y="20" width="220" height="310" rx="8" fill="#fff" stroke="#1E2125" stroke-width="1.4"/>
+            <text x="700" y="44" text-anchor="middle" font-weight="700">arm-none-eabi-gcc</text>
+            <text x="700" y="60" text-anchor="middle" font-size="10" fill="#5B6167">(as the linker driver)</text>
+            <text x="700" y="84" text-anchor="middle" font-size="10.5">resolves symbols across ALL .o files</text>
+            <text x="700" y="102" text-anchor="middle" font-size="10.5" fill="#A05A2C">weak SVC/PendSV/SysTick_Handler</text>
+            <text x="700" y="118" text-anchor="middle" font-size="10.5" fill="#A05A2C">lose to port.o's strong ones</text>
+            <text x="700" y="142" text-anchor="middle" font-size="10.5">vApplicationIdleHook must resolve -</text>
+            <text x="700" y="158" text-anchor="middle" font-size="9.5" fill="#5B6167">configUSE_IDLE_HOOK=1 means tasks.o calls it</text>
+
+            <rect x="620" y="180" width="160" height="60" rx="6" fill="#EAF1F8" stroke="#35618C"/>
+            <text x="700" y="202" text-anchor="middle" font-size="10.5" font-weight="700">-T stm32f103.ld</text>
+            <text x="700" y="220" text-anchor="middle" font-size="9.5" fill="#35618C">same linker script - flash/RAM</text>
+            <text x="700" y="234" text-anchor="middle" font-size="9.5" fill="#35618C">layout doesn't depend on clock speed</text>
+
+            <path d="M810,175 H890" stroke="#9198A0" stroke-width="1.1" marker-end="url(#pm)"/>
+
+            <rect x="890" y="60" width="150" height="60" rx="7" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+            <text x="965" y="86" text-anchor="middle" font-weight="700">.elf</text>
+            <text x="965" y="102" text-anchor="middle" font-size="9.5" fill="#2E7D5B">full debug info</text>
+
+            <path d="M965,120 V150" stroke="#2E7D5B" stroke-width="1.1" marker-end="url(#pm)"/>
+            <text x="970" y="140" font-size="9.5" fill="#2E7D5B">objcopy</text>
+
+            <rect x="890" y="150" width="150" height="50" rx="7" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+            <text x="965" y="172" text-anchor="middle" font-weight="700">.bin</text>
+            <text x="965" y="188" text-anchor="middle" font-size="9.5" fill="#2E7D5B">the image you flash</text>
+
+            <rect x="890" y="212" width="150" height="50" rx="7" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+            <text x="965" y="234" text-anchor="middle" font-weight="700">.hex</text>
+            <text x="965" y="250" text-anchor="middle" font-size="9.5" fill="#2E7D5B">an alternate format</text>
+
+            <text x="10" y="380" font-size="12" fill="#5B6167">Same seven inputs, same linker script as three-thread-blink - only the</text>
+            <text x="10" y="398" font-size="12" fill="#5B6167">bytes inside main.o differ.</text>
+          </g>
+        </svg>
+        <figcaption>Nothing about linking changes when the clock speed changes - clock configuration is runtime behaviour, not a build-time or link-time concern.</figcaption>
+      </figure>
+    </section>
+
+    <!-- ============================================================ -->
+    <section class="topic" id="build">
+      <div class="topic-head"><span class="topic-num">8</span><h2>Build and flash</h2></div>
+      <ol class="steps">
+        <li><strong>FreeRTOS already cloned?</strong> This project shares the same <code>../FreeRTOS/</code> clone as <code>three-thread-blink</code> - if you've already built that project in this workspace, nothing more to fetch. Otherwise: <code>git clone --depth 1 https://github.com/FreeRTOS/FreeRTOS-Kernel.git FreeRTOS</code> from inside <code>stm32f103/</code>.</li>
+        <li><strong>Build.</strong> <code>cd three-thread-blink_hse &amp;&amp; make</code> - produces <code>build/three-thread-blink_hse.elf</code>/<code>.bin</code>/<code>.hex</code> and prints a <code>size</code> summary.</li>
+        <li><strong>Flash.</strong> <code>make flash</code> - <code>st-flash write build/three-thread-blink_hse.bin 0x8000000</code>.</li>
+        <li><strong>Confirm.</strong> Same three periods as before - PC13 at 1&#8202;s, PA0 at 2&#8202;s, PA1 at 3&#8202;s - but now timed off a crystal instead of the internal RC oscillator, and with the core genuinely idle between ticks. If your board doesn't have a fitted HSE crystal, the LEDs still blink at the correct rate regardless - <code>clock_setup_hse_pll_72mhz()</code> silently falls back to HSI rather than hanging, and FreeRTOS was never told the clock actually changed... which is exactly why a fitted crystal matters here more than in most projects.</li>
+      </ol>
+      <p class="aside"><b>One real hazard.</b> If your board's crystal is missing or unsoldered, this function returns having done nothing - the chip is still on 8&#8202;MHz HSI - but <code>configCPU_CLOCK_HZ</code> in <code>FreeRTOSConfig.h</code> still says <code>72000000UL</code>. FreeRTOS will program a SysTick reload value nine times too large, and every <code>vTaskDelay()</code> period in the program will silently run nine times too slow. The LEDs will still blink, just at roughly 9&#8202;s, 18&#8202;s, and 27&#8202;s instead of 1/2/3 - worth knowing if the timing ever looks wrong on real hardware.</p>
+    </section>
+
+    <div class="footline">stm32f103 workspace notes &middot; RM0008: STM32F101/102/103/105/107 Reference Manual &middot; ARMv7-M Architecture Reference Manual</div>
+  </main>
+</div>
+</body>
+</html>
