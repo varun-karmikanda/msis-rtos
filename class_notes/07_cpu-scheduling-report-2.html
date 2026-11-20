@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scheduling five processes, part two</title>
+<style>
+  :root{
+    --bg:#fbfbf9;
+    --ink:#1c1c1a;
+    --ink-soft:#5b5b56;
+    --line:#e4e1d8;
+    --line-strong:#c9c5b8;
+    --p1:#3a6ea5;
+    --p2:#b8860b;
+    --p3:#2f8f77;
+    --p4:#7a6a9c;
+    --p5:#c4623f;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    line-height:1.6;
+  }
+  .page{max-width:760px;margin:0 auto;padding:64px 24px 96px;}
+  h1,h2{font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif;font-weight:normal;}
+  h1{font-size:32px;margin:0 0 10px;}
+  .dek{color:var(--ink-soft);font-size:16px;margin:0 0 8px;max-width:58ch;}
+  .rule{color:var(--ink-soft);font-size:14px;margin:0 0 40px;max-width:58ch;}
+  h2{font-size:20px;margin:48px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  table{width:100%;border-collapse:collapse;margin:16px 0 4px;font-size:14px;}
+  th,td{text-align:right;padding:6px 10px;border-bottom:1px solid var(--line);}
+  th:first-child,td:first-child{text-align:left;}
+  th{font-weight:600;color:var(--ink-soft);font-size:13px;}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:20px 0 0;font-size:13px;color:var(--ink-soft);}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  .gantt{margin:18px 0 6px;}
+  .bar{display:flex;height:40px;border:1px solid var(--line-strong);border-radius:3px;overflow:hidden;}
+  .seg{display:flex;align-items:center;justify-content:center;font-family:"SFMono-Regular",Consolas,monospace;font-size:12px;color:#fff;border-right:1px solid rgba(255,255,255,.35);}
+  .seg:last-child{border-right:none;}
+  .seg.p1{background:var(--p1);}
+  .seg.p2{background:var(--p2);}
+  .seg.p3{background:var(--p3);}
+  .seg.p4{background:var(--p4);}
+  .seg.p5{background:var(--p5);}
+  .ticks{position:relative;height:18px;margin:2px 0 4px;}
+  .ticks span{position:absolute;transform:translateX(-50%);font-size:11px;color:var(--ink-soft);font-family:"SFMono-Regular",Consolas,monospace;}
+  .stats{display:flex;gap:40px;margin:16px 0 8px;}
+  .stat{font-size:14px;color:var(--ink-soft);}
+  .stat b{font-family:Georgia,serif;font-size:19px;font-weight:normal;color:var(--ink);display:block;}
+  .summary td{font-variant-numeric:tabular-nums;}
+  footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-soft);}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Scheduling five processes, part two</h1>
+  <p class="dek">P1&ndash;P5 arrive one millisecond apart, starting at time 0. This works out the Gantt chart, turnaround time and waiting time under FCFS, non-preemptive SJF, and round robin with a quantum of 4.</p>
+  <p class="rule">Turnaround time = completion &minus; arrival. Waiting time = turnaround &minus; burst.</p>
+
+  <h2>Process data</h2>
+  <table>
+    <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>0</td><td>6</td></tr>
+      <tr><td>P2</td><td>1</td><td>13</td></tr>
+      <tr><td>P3</td><td>2</td><td>7</td></tr>
+      <tr><td>P4</td><td>3</td><td>5</td></tr>
+      <tr><td>P5</td><td>4</td><td>15</td></tr>
+    </tbody>
+  </table>
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--p1)"></i>P1</span>
+    <span><i class="swatch" style="background:var(--p2)"></i>P2</span>
+    <span><i class="swatch" style="background:var(--p3)"></i>P3</span>
+    <span><i class="swatch" style="background:var(--p4)"></i>P4</span>
+    <span><i class="swatch" style="background:var(--p5)"></i>P5</span>
+  </div>
+
+  <h2>1. First come, first served</h2>
+  <div class="gantt">
+    <div class="bar">
+      <div class="seg p1" style="flex-grow:6">P1</div>
+      <div class="seg p2" style="flex-grow:13">P2</div>
+      <div class="seg p3" style="flex-grow:7">P3</div>
+      <div class="seg p4" style="flex-grow:5">P4</div>
+      <div class="seg p5" style="flex-grow:15">P5</div>
+    </div>
+    <div class="ticks">
+      <span style="left:0%">0</span>
+      <span style="left:10.9%">5</span>
+      <span style="left:21.7%">10</span>
+      <span style="left:32.6%">15</span>
+      <span style="left:43.5%">20</span>
+      <span style="left:54.3%">25</span>
+      <span style="left:65.2%">30</span>
+      <span style="left:76.1%">35</span>
+      <span style="left:87.0%">40</span>
+      <span style="left:97.8%">45</span>
+      <span style="left:100%">46</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Completion</th><th>Turnaround</th><th>Waiting</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>0</td><td>6</td><td>6</td><td>6</td><td>0</td></tr>
+      <tr><td>P2</td><td>1</td><td>13</td><td>19</td><td>18</td><td>5</td></tr>
+      <tr><td>P3</td><td>2</td><td>7</td><td>26</td><td>24</td><td>17</td></tr>
+      <tr><td>P4</td><td>3</td><td>5</td><td>31</td><td>28</td><td>23</td></tr>
+      <tr><td>P5</td><td>4</td><td>15</td><td>46</td><td>42</td><td>27</td></tr>
+    </tbody>
+  </table>
+  <div class="stats">
+    <div class="stat">Average turnaround<b>23.6</b></div>
+    <div class="stat">Average waiting<b>14.4</b></div>
+  </div>
+
+  <h2>2. Shortest job first</h2>
+  <div class="gantt">
+    <div class="bar">
+      <div class="seg p1" style="flex-grow:6">P1</div>
+      <div class="seg p4" style="flex-grow:5">P4</div>
+      <div class="seg p3" style="flex-grow:7">P3</div>
+      <div class="seg p2" style="flex-grow:13">P2</div>
+      <div class="seg p5" style="flex-grow:15">P5</div>
+    </div>
+    <div class="ticks">
+      <span style="left:0%">0</span>
+      <span style="left:10.9%">5</span>
+      <span style="left:21.7%">10</span>
+      <span style="left:32.6%">15</span>
+      <span style="left:43.5%">20</span>
+      <span style="left:54.3%">25</span>
+      <span style="left:65.2%">30</span>
+      <span style="left:76.1%">35</span>
+      <span style="left:87.0%">40</span>
+      <span style="left:97.8%">45</span>
+      <span style="left:100%">46</span>
+    </div>
+  </div>
+  <p class="rule" style="margin:8px 0 0">At time 6, P2 (13), P3 (7), P4 (5) and P5 (15) have all arrived, so the shortest remaining burst is picked each time a process finishes.</p>
+  <table>
+    <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Completion</th><th>Turnaround</th><th>Waiting</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>0</td><td>6</td><td>6</td><td>6</td><td>0</td></tr>
+      <tr><td>P2</td><td>1</td><td>13</td><td>31</td><td>30</td><td>17</td></tr>
+      <tr><td>P3</td><td>2</td><td>7</td><td>18</td><td>16</td><td>9</td></tr>
+      <tr><td>P4</td><td>3</td><td>5</td><td>11</td><td>8</td><td>3</td></tr>
+      <tr><td>P5</td><td>4</td><td>15</td><td>46</td><td>42</td><td>27</td></tr>
+    </tbody>
+  </table>
+  <div class="stats">
+    <div class="stat">Average turnaround<b>20.4</b></div>
+    <div class="stat">Average waiting<b>11.2</b></div>
+  </div>
+
+  <h2>3. Round robin (quantum&nbsp;=&nbsp;4)</h2>
+  <div class="gantt">
+    <div class="bar">
+      <div class="seg p1" style="flex-grow:4">P1</div>
+      <div class="seg p2" style="flex-grow:4">P2</div>
+      <div class="seg p3" style="flex-grow:4">P3</div>
+      <div class="seg p4" style="flex-grow:4">P4</div>
+      <div class="seg p5" style="flex-grow:4">P5</div>
+      <div class="seg p1" style="flex-grow:2">P1</div>
+      <div class="seg p2" style="flex-grow:4">P2</div>
+      <div class="seg p3" style="flex-grow:3">P3</div>
+      <div class="seg p4" style="flex-grow:1"></div>
+      <div class="seg p5" style="flex-grow:4">P5</div>
+      <div class="seg p2" style="flex-grow:4">P2</div>
+      <div class="seg p5" style="flex-grow:4">P5</div>
+      <div class="seg p2" style="flex-grow:1"></div>
+      <div class="seg p5" style="flex-grow:3">P5</div>
+    </div>
+    <div class="ticks">
+      <span style="left:0%">0</span>
+      <span style="left:10.9%">5</span>
+      <span style="left:21.7%">10</span>
+      <span style="left:32.6%">15</span>
+      <span style="left:43.5%">20</span>
+      <span style="left:54.3%">25</span>
+      <span style="left:65.2%">30</span>
+      <span style="left:76.1%">35</span>
+      <span style="left:87.0%">40</span>
+      <span style="left:97.8%">45</span>
+      <span style="left:100%">46</span>
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Completion</th><th>Turnaround</th><th>Waiting</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>0</td><td>6</td><td>22</td><td>22</td><td>16</td></tr>
+      <tr><td>P2</td><td>1</td><td>13</td><td>43</td><td>42</td><td>29</td></tr>
+      <tr><td>P3</td><td>2</td><td>7</td><td>29</td><td>27</td><td>20</td></tr>
+      <tr><td>P4</td><td>3</td><td>5</td><td>30</td><td>27</td><td>22</td></tr>
+      <tr><td>P5</td><td>4</td><td>15</td><td>46</td><td>42</td><td>27</td></tr>
+    </tbody>
+  </table>
+  <div class="stats">
+    <div class="stat">Average turnaround<b>32.0</b></div>
+    <div class="stat">Average waiting<b>22.8</b></div>
+  </div>
+
+  <h2>Summary</h2>
+  <table class="summary">
+    <thead><tr><th>Algorithm</th><th>Average turnaround</th><th>Average waiting</th></tr></thead>
+    <tbody>
+      <tr><td>First come, first served</td><td>23.6</td><td>14.4</td></tr>
+      <tr><td>Shortest job first</td><td>20.4</td><td>11.2</td></tr>
+      <tr><td>Round robin (q=4)</td><td>32.0</td><td>22.8</td></tr>
+    </tbody>
+  </table>
+
+  <footer>SJF wins on average wait because it keeps clearing the shortest remaining job first, but P5 still waits 27ms under every policy here &mdash; it's the longest job and arrives last, so nothing shields it from that queue. Round robin costs the most on average because a 4ms slice against jobs this long forces several extra trips through the ready queue.</footer>
+
+</div>
+</body>
+</html>

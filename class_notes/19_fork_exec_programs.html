@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>fork() / exec() programs — with diagrams</title>
+<style>
+  body {
+    background: #ffffff;
+    color: #222222;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    max-width: 780px;
+    margin: 40px auto 100px;
+    padding: 0 20px;
+    line-height: 1.65;
+  }
+  h1 { font-size: 24px; font-weight: 600; margin-bottom: 6px; }
+  h2 { font-size: 19px; font-weight: 600; margin-top: 56px; margin-bottom: 4px; border-top: 1px solid #eeeeee; padding-top: 32px; }
+  h3 { font-size: 14px; font-weight: 600; margin-top: 20px; margin-bottom: 6px; color: #444444; }
+  p { margin: 10px 0; }
+  p.sub { color: #666666; font-size: 14px; margin-top: 0; }
+  pre {
+    background: #f6f5f1;
+    border: 1px solid #eceae3;
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  code { background: #f4f3ef; padding: 1px 5px; border-radius: 4px; font-size: 13px; }
+  pre code { background: none; padding: 0; }
+  .cmd { background: #222222; color: #eeeeee; border-radius: 8px; padding: 12px 16px; font-size: 13px; font-family: monospace; }
+  .cmd .line { display: block; }
+  .cmd .line::before { content: "$ "; color: #8bd17c; }
+  .figure { margin: 20px 0 8px; }
+  .notes { background: #fafaf7; border: 1px solid #ececea; border-radius: 10px; padding: 14px 20px; font-size: 14px; margin-top: 14px; }
+  .notes p:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<h1>fork() / exec() programs</h1>
+<p class="sub">Every program from the chat, with a block diagram of the parent/child relationship each one creates.</p>
+
+<!-- ============================================================ -->
+<h2>1. Basic fork — different text in parent and child</h2>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main() {
+    pid_t pid = fork();
+
+    if (pid &lt; 0) {
+        perror("fork failed");
+        return 1;
+    } else if (pid == 0) {
+        // Child process
+        printf("Child: my pid = %d, parent pid = %d\n", getpid(), getppid());
+    } else {
+        // Parent process
+        printf("Parent: my pid = %d, child pid = %d\n", getpid(), pid);
+        wait(NULL);
+        printf("Parent: child has exited\n");
+    }
+
+    return 0;
+}
+</code></pre>
+<div class="cmd"><span class="line">gcc -o forktest forktest.c</span><span class="line">./forktest</span></div>
+
+<h3>Virtual address space of parent and child, right after fork()</h3>
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 460" role="img">
+<title>Parent and child virtual address spaces immediately after fork, sharing physical pages via copy-on-write</title>
+<rect x="40" y="40" width="280" height="300" rx="14" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+<text x="180" y="66" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Parent — pid P</text>
+<rect x="60" y="90" width="240" height="50" rx="8" fill="#ffffff" stroke="#185FA5" stroke-width="0.5"/><text x="180" y="120" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Text</text>
+<rect x="60" y="150" width="240" height="50" rx="8" fill="#ffffff" stroke="#185FA5" stroke-width="0.5"/><text x="180" y="180" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Data / BSS</text>
+<rect x="60" y="210" width="240" height="50" rx="8" fill="#ffffff" stroke="#185FA5" stroke-width="0.5"/><text x="180" y="240" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Heap</text>
+<rect x="60" y="270" width="240" height="50" rx="8" fill="#ffffff" stroke="#185FA5" stroke-width="0.5"/><text x="180" y="300" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Stack</text>
+
+<rect x="360" y="40" width="280" height="300" rx="14" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="500" y="66" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Child — pid C</text>
+<rect x="380" y="90" width="240" height="50" rx="8" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="500" y="120" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Text</text>
+<rect x="380" y="150" width="240" height="50" rx="8" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="500" y="180" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Data / BSS</text>
+<rect x="380" y="210" width="240" height="50" rx="8" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="500" y="240" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Heap</text>
+<rect x="380" y="270" width="240" height="50" rx="8" fill="#ffffff" stroke="#534AB7" stroke-width="0.5"/><text x="500" y="300" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Stack</text>
+
+<rect x="190" y="380" width="300" height="50" rx="10" fill="#F1EFE8" stroke="#5F5E5A" stroke-width="1"/>
+<text x="340" y="405" text-anchor="middle" font-size="13" font-weight="600" fill="#444441">Same physical pages</text>
+<text x="340" y="421" text-anchor="middle" font-size="11" fill="#5F5E5A">marked read-only, shared until written</text>
+
+<line x1="180" y1="340" x2="260" y2="380" stroke="#185FA5" stroke-width="0.7" stroke-dasharray="4 3"/>
+<line x1="500" y1="340" x2="420" y2="380" stroke="#534AB7" stroke-width="0.7" stroke-dasharray="4 3"/>
+
+<text x="340" y="20" text-anchor="middle" font-size="12" fill="#888888">Two separate mm_structs, initially pointing at identical content</text>
+</svg>
+</div>
+<div class="notes">
+<p>Both address spaces have the same content at the instant of <code>fork()</code> — same code, same globals, same heap, same stack. The kernel duplicates the <em>page tables</em> (so each has an independent mapping), but marks the underlying physical pages read-only and shared. The first time either process writes to a page (e.g. the child's <code>printf</code> buffer, or a local variable), a page fault triggers the kernel to copy just that one page — this is copy-on-write, and it's why <code>fork()</code> is cheap even for a process with a large heap.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>2. Parent waits for a specific child pid</h2>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main() {
+    pid_t pid = fork();
+
+    if (pid &lt; 0) {
+        perror("fork failed");
+        return 1;
+    } else if (pid == 0) {
+        printf("Child: my pid = %d, parent pid = %d\n", getpid(), getppid());
+    } else {
+        printf("Parent: my pid = %d, child pid = %d\n", getpid(), pid);
+
+        int status;
+        pid_t exited_pid = waitpid(pid, &status, 0);
+
+        if (exited_pid == pid) {
+            if (WIFEXITED(status))
+                printf("Parent: child %d exited with status %d\n", exited_pid, WEXITSTATUS(status));
+            else
+                printf("Parent: child %d did not exit normally\n", exited_pid);
+        }
+    }
+
+    return 0;
+}
+</code></pre>
+<div class="cmd"><span class="line">gcc -o forktest forktest.c</span><span class="line">./forktest</span></div>
+
+<!-- ============================================================ -->
+<h2>3. Child sleeps for 20 seconds</h2>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main() {
+    pid_t pid = fork();
+
+    if (pid &lt; 0) {
+        perror("fork failed");
+        return 1;
+    } else if (pid == 0) {
+        printf("Child: my pid = %d, parent pid = %d\n", getpid(), getppid());
+        printf("Child: sleeping for 20 seconds...\n");
+        fflush(stdout);
+        sleep(20);
+        printf("Child: woke up, exiting now\n");
+    } else {
+        printf("Parent: my pid = %d, child pid = %d\n", getpid(), pid);
+        printf("Parent: waiting for child to finish...\n");
+        fflush(stdout);
+
+        int status;
+        pid_t exited_pid = waitpid(pid, &status, 0);
+
+        if (exited_pid == pid) {
+            if (WIFEXITED(status))
+                printf("Parent: child %d exited with status %d\n", exited_pid, WEXITSTATUS(status));
+            else
+                printf("Parent: child %d did not exit normally\n", exited_pid);
+        }
+    }
+
+    return 0;
+}
+</code></pre>
+<div class="cmd"><span class="line">gcc -o forktest forktest.c</span><span class="line">./forktest</span></div>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 220" role="img">
+<title>Parent-child relation for waitpid on a single child, including the sleeping child</title>
+<rect x="80" y="40" width="180" height="60" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+<text x="170" y="65" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Parent</text>
+<text x="170" y="83" text-anchor="middle" font-size="12" fill="#185FA5">blocked in waitpid()</text>
+
+<rect x="420" y="40" width="180" height="60" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="510" y="65" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Child</text>
+<text x="510" y="83" text-anchor="middle" font-size="12" fill="#534AB7">sleeping (0–20s)</text>
+
+<path d="M260 60L420 60" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a1)"/>
+<text x="340" y="50" text-anchor="middle" font-size="12" fill="#666666">fork()</text>
+
+<path d="M420 90L260 90" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a1)"/>
+<text x="340" y="112" text-anchor="middle" font-size="12" fill="#666666">exit → waitpid() returns</text>
+
+<defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5"/></marker></defs>
+
+<text x="340" y="170" text-anchor="middle" font-size="12" fill="#666666">Parent is off the runqueue (state S) for the full 20s — not spinning, just descheduled</text>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>4. Parent forks 3 children (10s, 20s, 30s), waits for all</h2>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main() {
+    int sleep_times[3] = {10, 20, 30};
+    pid_t child_pids[3];
+
+    for (int i = 0; i &lt; 3; i++) {
+        pid_t pid = fork();
+
+        if (pid &lt; 0) {
+            perror("fork failed");
+            return 1;
+        } else if (pid == 0) {
+            printf("Child %d: pid = %d, sleeping for %d seconds\n",
+                   i, getpid(), sleep_times[i]);
+            fflush(stdout);
+            sleep(sleep_times[i]);
+            printf("Child %d: pid = %d, woke up after %d seconds\n",
+                   i, getpid(), sleep_times[i]);
+            return 0;
+        } else {
+            child_pids[i] = pid;
+        }
+    }
+
+    printf("Parent: pid = %d, waiting for all children...\n", getpid());
+    fflush(stdout);
+
+    for (int i = 0; i &lt; 3; i++) {
+        int status;
+        pid_t exited_pid = waitpid(child_pids[i], &status, 0);
+        if (exited_pid == child_pids[i] && WIFEXITED(status)) {
+            printf("Parent: child %d (pid %d) exited with status %d\n",
+                   i, exited_pid, WEXITSTATUS(status));
+        }
+    }
+
+    printf("Parent: all children have exited\n");
+    return 0;
+}
+</code></pre>
+<div class="cmd"><span class="line">gcc -o forktest forktest.c</span><span class="line">./forktest</span></div>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 240" role="img">
+<title>One parent forking three sibling children with different sleep durations</title>
+<rect x="260" y="30" width="160" height="50" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+<text x="340" y="60" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Parent</text>
+
+<rect x="60" y="140" width="150" height="60" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="135" y="165" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Child 0</text>
+<text x="135" y="183" text-anchor="middle" font-size="12" fill="#534AB7">sleep 10s</text>
+
+<rect x="265" y="140" width="150" height="60" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="340" y="165" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Child 1</text>
+<text x="340" y="183" text-anchor="middle" font-size="12" fill="#534AB7">sleep 20s</text>
+
+<rect x="470" y="140" width="150" height="60" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="545" y="165" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Child 2</text>
+<text x="545" y="183" text-anchor="middle" font-size="12" fill="#534AB7">sleep 30s</text>
+
+<path d="M310 80L135 140" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a2)"/>
+<path d="M340 80L340 140" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a2)"/>
+<path d="M370 80L545 140" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a2)"/>
+<text x="340" y="110" text-anchor="middle" font-size="12" fill="#666666">fork() x3</text>
+<defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5"/></marker></defs>
+
+<text x="340" y="228" text-anchor="middle" font-size="12" fill="#666666">Parent calls waitpid(child_pids[i]) in order 0,1,2 — so print order is fixed even though child 0 finishes first anyway</text>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>5. rec_fork — parent → child1 → child2 → child3, each waits for its own child</h2>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main() {
+    printf("Original parent: pid = %d\n", getpid());
+    fflush(stdout);
+
+    pid_t pid1 = fork();
+
+    if (pid1 &lt; 0) {
+        perror("fork failed");
+        return 1;
+    } else if (pid1 == 0) {
+        // ---- child1 ----
+        printf("Child1: pid = %d, parent pid = %d\n", getpid(), getppid());
+        fflush(stdout);
+
+        pid_t pid2 = fork();
+
+        if (pid2 &lt; 0) {
+            perror("fork failed");
+            return 1;
+        } else if (pid2 == 0) {
+            // ---- child2 ----
+            printf("Child2: pid = %d, parent pid = %d\n", getpid(), getppid());
+            fflush(stdout);
+
+            pid_t pid3 = fork();
+
+            if (pid3 &lt; 0) {
+                perror("fork failed");
+                return 1;
+            } else if (pid3 == 0) {
+                // ---- child3 ----
+                printf("Child3: pid = %d, parent pid = %d, sleeping 10s\n", getpid(), getppid());
+                fflush(stdout);
+                sleep(10);
+                printf("Child3: pid = %d, woke up, exiting\n", getpid());
+                return 0;
+            } else {
+                int status;
+                waitpid(pid3, &status, 0);
+                printf("Child2: pid = %d, child3 (pid %d) exited\n", getpid(), pid3);
+                sleep(10);
+                printf("Child2: pid = %d, woke up, exiting\n", getpid());
+                return 0;
+            }
+        } else {
+            int status;
+            waitpid(pid2, &status, 0);
+            printf("Child1: pid = %d, child2 (pid %d) exited\n", getpid(), pid2);
+            sleep(10);
+            printf("Child1: pid = %d, woke up, exiting\n", getpid());
+            return 0;
+        }
+    } else {
+        // ---- original parent ----
+        int status;
+        waitpid(pid1, &status, 0);
+        printf("Original parent: pid = %d, child1 (pid %d) exited\n", getpid(), pid1);
+    }
+
+    return 0;
+}
+</code></pre>
+<div class="cmd"><span class="line">gcc -o rec_fork rec_fork.c</span><span class="line">./rec_fork</span></div>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 300" role="img">
+<title>A four-level ancestry chain, each process forking and waiting for the next</title>
+<rect x="250" y="20" width="180" height="46" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/><text x="340" y="48" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Original parent</text>
+<rect x="250" y="90" width="180" height="46" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/><text x="340" y="118" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Child1</text>
+<rect x="250" y="160" width="180" height="46" rx="10" fill="#FBEAF0" stroke="#993556" stroke-width="1"/><text x="340" y="188" text-anchor="middle" font-size="14" font-weight="600" fill="#72243E">Child2</text>
+<rect x="250" y="230" width="180" height="46" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/><text x="340" y="258" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">Child3 — sleeps 10s</text>
+
+<path d="M300 66L300 90" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a3)"/>
+<path d="M380 90L380 66" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a3)"/>
+<path d="M300 136L300 160" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a3)"/>
+<path d="M380 160L380 136" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a3)"/>
+<path d="M300 206L300 230" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a3)"/>
+<path d="M380 230L380 206" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a3)"/>
+<defs><marker id="a3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5"/></marker></defs>
+
+<text x="150" y="80" text-anchor="middle" font-size="11" fill="#666666">fork()</text>
+<text x="530" y="80" text-anchor="middle" font-size="11" fill="#666666">waitpid()</text>
+<text x="150" y="150" text-anchor="middle" font-size="11" fill="#666666">fork()</text>
+<text x="530" y="150" text-anchor="middle" font-size="11" fill="#666666">waitpid()</text>
+<text x="150" y="220" text-anchor="middle" font-size="11" fill="#666666">fork()</text>
+<text x="530" y="220" text-anchor="middle" font-size="11" fill="#666666">waitpid()</text>
+
+<text x="340" y="292" text-anchor="middle" font-size="12" fill="#666666">Total ~30s wall clock: each parent's own sleep(10) only starts after its child already exited</text>
+</svg>
+</div>
+
+<!-- ============================================================ -->
+<h2>6. fork + exec — child replaces itself with a different program</h2>
+<h3>exec_prog.c</h3>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+
+int main() {
+    printf("exec_prog: pid = %d, starting count\n", getpid());
+    fflush(stdout);
+
+    for (int i = 1; i &lt;= 10; i++) {
+        printf("%d\n", i);
+        fflush(stdout);
+        sleep(1);
+    }
+
+    return 0;
+}
+</code></pre>
+
+<h3>fork_exec.c</h3>
+<pre><code>#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+
+int main() {
+    printf("fork_exec: parent pid = %d\n", getpid());
+    fflush(stdout);
+
+    pid_t pid = fork();
+
+    if (pid &lt; 0) {
+        perror("fork failed");
+        return 1;
+    } else if (pid == 0) {
+        printf("fork_exec: child pid = %d, about to exec\n", getpid());
+        fflush(stdout);
+
+        execl("./exec_prog", "exec_prog", NULL);
+
+        perror("execl failed");
+        return 1;
+    } else {
+        int status;
+        waitpid(pid, &status, 0);
+        printf("fork_exec: child (pid %d) exited\n", pid);
+    }
+
+    return 0;
+}
+</code></pre>
+
+<div class="cmd"><span class="line">gcc -o exec_prog exec_prog.c</span><span class="line">gcc -o fork_exec fork_exec.c</span><span class="line">./fork_exec</span></div>
+
+<p>While it's running (~10 seconds), check the relationship in another terminal:</p>
+<div class="cmd"><span class="line">ps -o pid,ppid,cmd -C exec_prog</span><span class="line">pstree -p $(pgrep fork_exec)</span><span class="line">cat /proc/$(pgrep exec_prog)/status | grep -E 'Pid|PPid'</span></div>
+
+<div class="figure">
+<svg width="100%" viewBox="0 0 680 200" role="img">
+<title>fork creates a child, exec replaces its memory image in place, keeping the same pid</title>
+<rect x="30" y="60" width="160" height="60" rx="10" fill="#E6F1FB" stroke="#185FA5" stroke-width="1"/>
+<text x="110" y="85" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">fork_exec</text>
+<text x="110" y="103" text-anchor="middle" font-size="12" fill="#185FA5">parent</text>
+
+<rect x="260" y="60" width="160" height="60" rx="10" fill="#EEEDFE" stroke="#534AB7" stroke-width="1"/>
+<text x="340" y="85" text-anchor="middle" font-size="14" font-weight="600" fill="#3C3489">Child</text>
+<text x="340" y="103" text-anchor="middle" font-size="12" fill="#534AB7">pid = X, running fork_exec code</text>
+
+<rect x="490" y="60" width="160" height="60" rx="10" fill="#FAEEDA" stroke="#854F0B" stroke-width="1"/>
+<text x="570" y="85" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">exec_prog</text>
+<text x="570" y="103" text-anchor="middle" font-size="12" fill="#854F0B">pid = X, new image</text>
+
+<path d="M190 90L260 90" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a4)"/>
+<text x="225" y="78" text-anchor="middle" font-size="11" fill="#666666">fork()</text>
+<path d="M420 90L490 90" fill="none" stroke="#5F5E5A" stroke-width="0.7" marker-end="url(#a4)"/>
+<text x="455" y="78" text-anchor="middle" font-size="11" fill="#666666">execl()</text>
+<defs><marker id="a4" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5"/></marker></defs>
+
+<text x="340" y="160" text-anchor="middle" font-size="12" fill="#666666">Same pid throughout the middle and right box — exec() replaces the memory</text>
+<text x="340" y="176" text-anchor="middle" font-size="12" fill="#666666">image in place, it does not create a new process</text>
+</svg>
+</div>
+
+<div class="notes">
+<p>The pid printed by <code>fork_exec: child pid = ...</code> is the exact same pid that <code>exec_prog: pid = ...</code> prints. <code>exec()</code> replaces the calling process's text/data/heap/stack with the new binary's, keeping the same pid, ppid, open file descriptors, and signal dispositions. <code>ps</code> and <code>pstree</code> will still show a normal parent/child <em>process</em> relationship (<code>fork_exec───exec_prog</code>), even though only one <code>fork()</code> and one <code>exec()</code> occurred — not two forks.</p>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-level feedback queue scheduling</title>
+<style>
+  :root{
+    --bg:#fbfbf9;
+    --ink:#1c1c1a;
+    --ink-soft:#5b5b56;
+    --line:#e4e1d8;
+    --line-strong:#c9c5b8;
+    --p1:#3a6ea5;
+    --p2:#b8860b;
+    --p3:#2f8f77;
+    --q0:#3d4b7a;
+    --q1:#8a6b3d;
+    --q2:#6b6b66;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    line-height:1.65;
+  }
+  .page{max-width:780px;margin:0 auto;padding:64px 24px 96px;}
+  h1,h2{font-family:Georgia,"Iowan Old Style","Palatino Linotype",serif;font-weight:normal;}
+  h1{font-size:32px;margin:0 0 10px;}
+  .dek{color:var(--ink-soft);font-size:16px;margin:0 0 40px;max-width:60ch;}
+  h2{font-size:20px;margin:48px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  h3{font-size:15px;margin:28px 0 10px;font-weight:600;}
+  p{margin:0 0 14px;max-width:66ch;}
+  ul,ol{margin:0 0 16px;padding-left:22px;}
+  li{margin-bottom:6px;max-width:62ch;}
+  table{width:100%;border-collapse:collapse;margin:16px 0 4px;font-size:14px;}
+  th,td{text-align:right;padding:6px 10px;border-bottom:1px solid var(--line);}
+  th:first-child,td:first-child{text-align:left;}
+  th{font-weight:600;color:var(--ink-soft);font-size:13px;}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;margin:20px 0 0;font-size:13px;color:var(--ink-soft);}
+  .legend span{display:inline-flex;align-items:center;gap:6px;}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block;}
+  .gantt{margin:18px 0 2px;}
+  .bar{display:flex;height:40px;border:1px solid var(--line-strong);border-radius:3px;overflow:hidden;}
+  .seg{display:flex;align-items:center;justify-content:center;font-family:"SFMono-Regular",Consolas,monospace;font-size:12px;color:#fff;border-right:1px solid rgba(255,255,255,.35);}
+  .seg:last-child{border-right:none;}
+  .seg.p1{background:var(--p1);}
+  .seg.p2{background:var(--p2);}
+  .seg.p3{background:var(--p3);}
+  .levels{display:flex;margin-top:2px;}
+  .lvl{display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--ink-soft);border-top:2px solid var(--line-strong);padding-top:4px;font-family:"SFMono-Regular",Consolas,monospace;}
+  .ticks{position:relative;height:18px;margin:16px 0 4px;}
+  .ticks span{position:absolute;transform:translateX(-50%);font-size:11px;color:var(--ink-soft);font-family:"SFMono-Regular",Consolas,monospace;}
+  .stats{display:flex;gap:40px;margin:16px 0 8px;}
+  .stat{font-size:14px;color:var(--ink-soft);}
+  .stat b{font-family:Georgia,serif;font-size:19px;font-weight:normal;color:var(--ink);display:block;}
+  .diagram{margin:20px 0 8px;}
+  .diagram svg{width:100%;height:auto;display:block;}
+  .diagram text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;}
+  .callout{border-left:2px solid var(--line-strong);padding:2px 0 2px 16px;color:var(--ink-soft);font-size:14px;margin:16px 0 24px;}
+  footer{margin-top:56px;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-soft);}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Multi-level feedback queue scheduling</h1>
+  <p class="dek">A multi-level feedback queue (MLFQ) uses several ready queues, each with its own priority and time quantum, and moves a process between them based on how it actually behaves &mdash; not on any burst time given up front.</p>
+
+  <h2>Goals</h2>
+  <ul>
+    <li>Give short, interactive jobs low turnaround time, the way SJF or STCF would &mdash; but without knowing burst lengths ahead of time.</li>
+    <li>Keep the system feeling responsive, the way round robin does, so no job waits unreasonably long for its first slice of CPU.</li>
+    <li>Prevent long-running jobs from being starved of CPU time entirely.</li>
+  </ul>
+
+  <h2>Rules</h2>
+  <ol>
+    <li>A higher-priority queue always runs before a lower-priority one.</li>
+    <li>Jobs at the same priority level are scheduled round robin, using that level's quantum.</li>
+    <li>A new job enters at the topmost (highest-priority) queue.</li>
+    <li>If a job uses up its entire quantum at a level, it is demoted one level; if it gives up the CPU voluntarily before the quantum expires, it stays where it is.</li>
+    <li>After a fixed period, every job is boosted back to the top queue, so a long job can't be starved indefinitely by a steady stream of new short ones.</li>
+  </ol>
+
+  <h2>Structure</h2>
+  <div class="diagram">
+    <svg viewBox="0 0 640 340" role="img">
+      <title>MLFQ queue structure</title>
+      <desc>Three priority queues, Q0 through Q2, with jobs entering at the top, demotion arrows moving jobs down a level when their quantum runs out, and a boost arrow returning jobs to the top queue</desc>
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--ink-soft)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+      <text x="230" y="14" text-anchor="middle" font-size="12" fill="var(--ink-soft)">new process</text>
+      <line x1="230" y1="18" x2="230" y2="38" stroke="var(--ink-soft)" stroke-width="1" marker-end="url(#arrow)"/>
+      <rect x="60" y="40" width="340" height="60" rx="3" fill="var(--q0)"/>
+      <text x="80" y="66" font-size="13" fill="#fff">Q0 &mdash; quantum 4ms</text>
+      <text x="80" y="84" font-size="11" fill="rgba(255,255,255,.75)">highest priority</text>
+      <text x="420" y="76" font-size="11" fill="var(--ink-soft)">round robin at each level</text>
+      <line x1="230" y1="100" x2="230" y2="148" stroke="var(--ink-soft)" stroke-width="1" marker-end="url(#arrow)"/>
+      <text x="245" y="128" font-size="11" fill="var(--ink-soft)">quantum used up</text>
+      <rect x="60" y="150" width="340" height="60" rx="3" fill="var(--q1)"/>
+      <text x="80" y="176" font-size="13" fill="#fff">Q1 &mdash; quantum 8ms</text>
+      <text x="80" y="194" font-size="11" fill="rgba(255,255,255,.75)">middle priority</text>
+      <line x1="230" y1="210" x2="230" y2="258" stroke="var(--ink-soft)" stroke-width="1" marker-end="url(#arrow)"/>
+      <text x="245" y="238" font-size="11" fill="var(--ink-soft)">quantum used up</text>
+      <rect x="60" y="260" width="340" height="60" rx="3" fill="var(--q2)"/>
+      <text x="80" y="286" font-size="13" fill="#fff">Q2 &mdash; quantum 16ms</text>
+      <text x="80" y="304" font-size="11" fill="rgba(255,255,255,.75)">lowest priority</text>
+      <path d="M 400 285 C 560 285, 560 55, 400 55" fill="none" stroke="var(--ink-soft)" stroke-width="1" marker-end="url(#arrow)"/>
+      <text x="565" y="170" font-size="11" fill="var(--ink-soft)" text-anchor="middle" transform="rotate(90 565 170)">periodic priority boost</text>
+    </svg>
+  </div>
+  <p class="callout">A job that gives up the CPU on its own &mdash; waiting on I/O, say &mdash; keeps its current level instead of being demoted, so genuinely interactive jobs stay near the top even after running for a while.</p>
+
+  <h2>Advantages</h2>
+  <ul>
+    <li>Approximates shortest-job-first behaviour for short jobs without ever needing to know burst lengths in advance &mdash; a job's history in the queues stands in for that knowledge.</li>
+    <li>Stays responsive: because new and short jobs sit in a high queue with a short quantum, they get CPU time quickly.</li>
+    <li>The priority boost stops CPU-bound jobs from starving once enough interactive jobs are around.</li>
+    <li>Accounting quantum usage per level, rather than per individual time slice, keeps a job from gaming the scheduler by yielding just before its quantum expires.</li>
+  </ul>
+
+  <h2>Worked example</h2>
+  <p>Three processes, one long and two short, arriving a few milliseconds apart, using the queues above (Q0 quantum 4ms, Q1 quantum 8ms, Q2 quantum 16ms):</p>
+  <table>
+    <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>0</td><td>24</td></tr>
+      <tr><td>P2</td><td>4</td><td>6</td></tr>
+      <tr><td>P3</td><td>8</td><td>2</td></tr>
+    </tbody>
+  </table>
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--p1)"></i>P1</span>
+    <span><i class="swatch" style="background:var(--p2)"></i>P2</span>
+    <span><i class="swatch" style="background:var(--p3)"></i>P3</span>
+  </div>
+  <div class="gantt">
+    <div class="bar">
+      <div class="seg p1" style="flex-grow:4">P1</div>
+      <div class="seg p2" style="flex-grow:4">P2</div>
+      <div class="seg p3" style="flex-grow:2">P3</div>
+      <div class="seg p1" style="flex-grow:8">P1</div>
+      <div class="seg p2" style="flex-grow:2">P2</div>
+      <div class="seg p1" style="flex-grow:12">P1</div>
+    </div>
+    <div class="levels">
+      <div class="lvl" style="flex-grow:4">Q0</div>
+      <div class="lvl" style="flex-grow:4">Q0</div>
+      <div class="lvl" style="flex-grow:2">Q0</div>
+      <div class="lvl" style="flex-grow:8">Q1</div>
+      <div class="lvl" style="flex-grow:2">Q1</div>
+      <div class="lvl" style="flex-grow:12">Q2</div>
+    </div>
+    <div class="ticks">
+      <span style="left:0%">0</span>
+      <span style="left:12.5%">4</span>
+      <span style="left:25%">8</span>
+      <span style="left:37.5%">12</span>
+      <span style="left:50%">16</span>
+      <span style="left:62.5%">20</span>
+      <span style="left:75%">24</span>
+      <span style="left:87.5%">28</span>
+      <span style="left:100%">32</span>
+    </div>
+  </div>
+  <p>P1 starts at Q0 and burns through its 4ms quantum, so it's demoted to Q1. P2 arrives and does the same. P3 arrives with only 2ms of work left, finishes inside its first Q0 quantum, and never gets demoted at all. Once Q0 empties, P1 and P2 run out their Q1 quantum &mdash; P1 gets demoted again to Q2, while P2 finishes with only 2ms left to give. P1 spends the rest of its life alone in Q2.</p>
+  <table>
+    <thead><tr><th>Process</th><th>Arrival</th><th>Burst</th><th>Completion</th><th>Turnaround</th><th>Waiting</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>0</td><td>24</td><td>32</td><td>32</td><td>8</td></tr>
+      <tr><td>P2</td><td>4</td><td>6</td><td>20</td><td>16</td><td>10</td></tr>
+      <tr><td>P3</td><td>8</td><td>2</td><td>10</td><td>2</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <div class="stats">
+    <div class="stat">Average turnaround<b>16.7</b></div>
+    <div class="stat">Average waiting<b>6.0</b></div>
+  </div>
+
+  <h2>Analysis against other algorithms</h2>
+  <table>
+    <thead><tr><th>Algorithm</th><th>Needs burst length upfront</th><th>Responsiveness</th><th>Starvation risk</th></tr></thead>
+    <tbody>
+      <tr><td>FCFS</td><td>No</td><td>Poor</td><td>None, but everyone queues behind whoever arrived first</td></tr>
+      <tr><td>SJF</td><td>Yes</td><td>Poor</td><td>Long jobs can starve behind a stream of short ones</td></tr>
+      <tr><td>Round robin</td><td>No</td><td>Good</td><td>None</td></tr>
+      <tr><td>Static priority</td><td>No</td><td>Depends on assignment</td><td>Low-priority jobs can starve</td></tr>
+      <tr><td>MLFQ</td><td>No</td><td>Good</td><td>Mitigated by the periodic boost</td></tr>
+    </tbody>
+  </table>
+
+  <p>Running the same three processes through FCFS, non-preemptive SJF, and plain round robin (quantum 4) makes the trade-offs concrete:</p>
+  <table>
+    <thead><tr><th>Algorithm</th><th>Average turnaround</th><th>Average waiting</th></tr></thead>
+    <tbody>
+      <tr><td>FCFS</td><td>24.7</td><td>14.0</td></tr>
+      <tr><td>SJF (non-preemptive)</td><td>23.3</td><td>12.7</td></tr>
+      <tr><td>Round robin (q=4)</td><td>16.7</td><td>6.0</td></tr>
+      <tr><td>MLFQ</td><td>16.7</td><td>6.0</td></tr>
+    </tbody>
+  </table>
+  <p>MLFQ ties plain round robin on the average here, but the two don't treat individual jobs the same way. Looking at waiting time process by process shows why:</p>
+  <table>
+    <thead><tr><th>Algorithm</th><th>P1 wait</th><th>P2 wait</th><th>P3 wait</th></tr></thead>
+    <tbody>
+      <tr><td>FCFS</td><td>0</td><td>20</td><td>22</td></tr>
+      <tr><td>SJF (non-preemptive)</td><td>0</td><td>22</td><td>16</td></tr>
+      <tr><td>Round robin (q=4)</td><td>8</td><td>6</td><td>4</td></tr>
+      <tr><td>MLFQ</td><td>8</td><td>10</td><td>0</td></tr>
+    </tbody>
+  </table>
+  <p>Non-preemptive SJF actually does worse than either RR or MLFQ for P3 here: P1 arrives first and, having no preemption to interrupt it, gets to run for its full 24ms before the scheduler ever gets to compare burst lengths &mdash; the classic convoy effect. MLFQ avoids that because it's preemptive from the start: P3's arrival lets it grab a Q0 slot the moment it shows up, so it waits 0ms despite the scheduler never being told it was the shortest job. Against round robin, MLFQ shifts wait time away from the shortest job (P3, 0 vs 4) and onto the medium one (P2, 10 vs 6), while landing on the same average &mdash; a small piece of evidence that MLFQ's queue structure does approximate SJF-like ordering, not just plain fairness.</p>
+
+  <footer>MLFQ's real advantage over both SJF and static priority is that it never has to assume anything about a job upfront &mdash; it just watches how long a job keeps running and reacts to that, then uses the periodic boost as a safety valve so that reactivity never turns into starvation.</footer>
+
+</div>
+</body>
+</html>

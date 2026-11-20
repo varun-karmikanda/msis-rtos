@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Task Management in FreeRTOS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --panel:   #F3F4F0;
+    --accent:  #35618C;
+    --accent-bg:#EAF1F8;
+    --run:     #2E7D5B;
+    --run-bg:  #E8F3ED;
+    --block:   #A05A2C;
+    --block-bg:#FAF0E6;
+    --purple:  #6E5A96;
+    --purple-bg:#EFEBF5;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  article{ max-width:1080px; margin:0 auto; padding:60px 24px 110px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:33px; font-weight:700; line-height:1.22; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17.5px; color:var(--ink-soft); max-width:68ch; margin:0 0 8px; }
+  p{ max-width:72ch; margin:0 0 16px; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+  h2{ font-size:23px; font-weight:700; margin:60px 0 6px; letter-spacing:-.01em; }
+  .num{ font-family:var(--mono); font-size:13px; color:var(--ink-dim); }
+  .sub{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin:0 0 18px; }
+  h3{ font-size:15.5px; font-weight:700; margin:30px 0 10px; }
+  hr.div{ border:none; border-top:1px solid var(--rule); margin:54px 0; }
+  figure{ margin:22px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-top:10px; max-width:74ch; }
+  .aside{ border-left:2px solid var(--accent-bg); padding-left:16px; margin:22px 0; font-size:15.5px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+  table{ width:100%; border-collapse:collapse; margin:16px 0 22px; font-size:14.5px; }
+  th,td{ text-align:left; padding:9px 12px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  thead th{ font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--ink-dim); border-bottom:1.5px solid var(--ink); }
+  .footline{ margin-top:64px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+  .toc{ font-family:var(--mono); font-size:13px; color:var(--ink-soft); margin:28px 0 6px; padding:16px 20px; background:var(--panel); border-radius:8px; }
+  .toc a{ color:var(--ink-soft); text-decoration:none; }
+  .toc a:hover{ color:var(--accent); }
+  .toc ol{ margin:8px 0 0; padding-left:20px; }
+  .toc li{ margin-bottom:4px; }
+</style>
+</head>
+<body>
+<article>
+
+  <p class="byline">FreeRTOS notes</p>
+  <h1>Task Management in FreeRTOS</h1>
+  <p class="dek">A task is nothing exotic - a C function, a private stack, and one small struct the scheduler uses to keep track of it. Everything below is really just different views of that one idea.</p>
+
+  <nav class="toc">
+    contents
+    <ol>
+      <li><a href="#memory">A task in memory</a></li>
+      <li><a href="#states">Task states, lifecycle &amp; types</a></li>
+      <li><a href="#tcb">The Task Control Block</a></li>
+      <li><a href="#sched">Task scheduling &amp; scheduling queues</a></li>
+      <li><a href="#algo">The scheduling algorithm</a></li>
+    </ol>
+  </nav>
+
+  <!-- ============================================================ -->
+  <h2 id="memory"><span class="num">1</span>&nbsp; A task in memory</h2>
+  <p>Creating a task with <code>xTaskCreate()</code> doesn't carve out a new address space - FreeRTOS has no MMU to do that with. It hands the new task exactly one thing that's genuinely its own: a stack. Everything else - the code, the globals, the heap those <code>xTaskCreate()</code> calls come out of - is one shared region every task in the system reads and writes equally.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mem-t">
+      <title id="mem-t">A task's private stack sitting inside one shared address space</title>
+      <defs>
+        <marker id="m1" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="22" font-size="12.5" font-weight="700" fill="#1E2125">one flat address space</text>
+
+        <rect x="10" y="34" width="980" height="90" rx="8" fill="#F3F4F0" stroke="#D8DAD3" stroke-width="1.3"/>
+        <text x="30" y="60" font-weight="700" font-size="12.5">.text / .data / .bss</text>
+        <text x="30" y="76" font-size="10.5" fill="#5B6167">code, string constants, globals - one shared copy</text>
+        <rect x="460" y="46" width="520" height="66" rx="6" fill="#fff" stroke="#D8DAD3"/>
+        <text x="480" y="68" font-weight="700" font-size="12.5">heap (heap_4.c, etc.)</text>
+        <text x="480" y="84" font-size="10.5" fill="#5B6167">one shared arena - pvPortMalloc() serves TCBs, stacks, queues from here</text>
+        <text x="480" y="100" font-size="10.5" fill="#5B6167">(unless you use the *Static() calls below, which skip it entirely)</text>
+
+        <text x="10" y="150" font-size="12.5" font-weight="700" fill="#1E2125">private to each task</text>
+
+        <!-- three stacks -->
+        <g>
+          <rect x="10" y="164" width="310" height="200" rx="8" fill="#fff" stroke="#2E7D5B" stroke-width="1.4"/>
+          <rect x="10" y="164" width="310" height="30" rx="8" fill="#2E7D5B"/>
+          <text x="165" y="184" text-anchor="middle" fill="#fff" font-weight="700">Task A's stack</text>
+          <text x="165" y="216" text-anchor="middle" font-size="10.5" fill="#5B6167">locals, call frames, and -</text>
+          <text x="165" y="230" text-anchor="middle" font-size="10.5" fill="#5B6167">when not running - its saved registers</text>
+          <rect x="26" y="250" width="278" height="30" fill="#E8F3ED" stroke="#2E7D5B"/>
+          <text x="165" y="270" text-anchor="middle" font-size="10">nobody else can read or corrupt this</text>
+          <text x="165" y="352" text-anchor="middle" font-size="10" fill="#9198A0">no MMU behind it, either</text>
+        </g>
+
+        <g>
+          <rect x="345" y="164" width="310" height="200" rx="8" fill="#fff" stroke="#35618C" stroke-width="1.4"/>
+          <rect x="345" y="164" width="310" height="30" rx="8" fill="#35618C"/>
+          <text x="500" y="184" text-anchor="middle" fill="#fff" font-weight="700">Task B's stack</text>
+          <text x="500" y="216" text-anchor="middle" font-size="10.5" fill="#5B6167">same shape, completely separate</text>
+          <text x="500" y="230" text-anchor="middle" font-size="10.5" fill="#5B6167">memory from Task A's</text>
+          <rect x="361" y="250" width="278" height="30" fill="#EAF1F8" stroke="#35618C"/>
+          <text x="500" y="270" text-anchor="middle" font-size="10">sized once, at creation, and fixed</text>
+        </g>
+
+        <g>
+          <rect x="680" y="164" width="310" height="200" rx="8" fill="#fff" stroke="#A05A2C" stroke-width="1.4"/>
+          <rect x="680" y="164" width="310" height="30" rx="8" fill="#A05A2C"/>
+          <text x="835" y="184" text-anchor="middle" fill="#fff" font-weight="700">Task C's stack</text>
+          <text x="835" y="216" text-anchor="middle" font-size="10.5" fill="#5B6167">too small, and it overflows silently</text>
+          <text x="835" y="230" text-anchor="middle" font-size="10.5" fill="#5B6167">into whatever's next in RAM</text>
+          <rect x="696" y="250" width="278" height="30" fill="#FAF0E6" stroke="#A05A2C"/>
+          <text x="835" y="270" text-anchor="middle" font-size="10">configCHECK_FOR_STACK_OVERFLOW helps</text>
+        </g>
+
+        <path d="M165,124 V164" stroke="#9198A0" stroke-width="1.2" fill="none" marker-end="url(#m1)"/>
+        <path d="M500,124 V164" stroke="#9198A0" stroke-width="1.2" fill="none" marker-end="url(#m1)"/>
+        <path d="M835,124 V164" stroke="#9198A0" stroke-width="1.2" fill="none" marker-end="url(#m1)"/>
+        <text x="500" y="142" text-anchor="middle" font-size="10" fill="#9198A0">carved out of the shared heap at xTaskCreate() time</text>
+      </g>
+    </svg>
+    <figcaption>The TCB itself isn't shown here on purpose - it's a separate, small allocation that just remembers where each of these stacks is. That's section 3.</figcaption>
+  </figure>
+
+  <p class="aside">The trade being made here is the same one behind every design choice in this doc: no MMU means no per-task isolation, but it also means no page tables to walk and no translation overhead on every memory access - one less source of "how long could this possibly take" in a system that has to answer that question.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="states"><span class="num">2</span>&nbsp; Task states, lifecycle &amp; types</h2>
+
+  <h3>States - what a live task is doing right now</h3>
+  <p>Four states cover every live task in the system. Only one task can be <em>Running</em> at a time per core; everything else is Ready, Blocked, or Suspended.</p>
+
+  <figure>
+    <svg viewBox="0 0 780 340" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="st-t">
+      <title id="st-t">FreeRTOS task state transitions</title>
+      <defs>
+        <marker id="m2" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#5B6167"/></marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace" font-size="12.5">
+        <rect x="300" y="10" width="180" height="56" rx="8" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.5"/>
+        <text x="390" y="34" text-anchor="middle" font-weight="700">Running</text>
+        <text x="390" y="50" text-anchor="middle" font-size="9.5" fill="#2E7D5B">on the CPU, this instant</text>
+
+        <rect x="300" y="240" width="180" height="56" rx="8" fill="#EAF1F8" stroke="#35618C" stroke-width="1.5"/>
+        <text x="390" y="264" text-anchor="middle" font-weight="700">Ready</text>
+        <text x="390" y="280" text-anchor="middle" font-size="9.5" fill="#35618C">could run, just not picked yet</text>
+
+        <rect x="20" y="125" width="180" height="56" rx="8" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.5"/>
+        <text x="110" y="149" text-anchor="middle" font-weight="700">Blocked</text>
+        <text x="110" y="165" text-anchor="middle" font-size="9.5" fill="#A05A2C">waiting, with a timeout</text>
+
+        <rect x="580" y="125" width="180" height="56" rx="8" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.5"/>
+        <text x="670" y="149" text-anchor="middle" font-weight="700">Suspended</text>
+        <text x="670" y="165" text-anchor="middle" font-size="9.5" fill="#6E5A96">off the scheduler's radar entirely</text>
+
+        <!-- Ready -> Running -->
+        <path d="M355,240 C330,190 350,110 375,66" stroke="#5B6167" stroke-width="1.2" fill="none" marker-end="url(#m2)"/>
+        <text x="300" y="150" font-size="9.5" fill="#5B6167">scheduler picks it</text>
+        <!-- Running -> Ready -->
+        <path d="M420,66 C450,110 430,190 420,240" stroke="#5B6167" stroke-width="1.2" fill="none" marker-end="url(#m2)"/>
+        <text x="440" y="150" font-size="9.5" fill="#5B6167">preempted / time slice up</text>
+
+        <!-- Running -> Blocked -->
+        <path d="M300,45 C220,55 150,85 130,125" stroke="#5B6167" stroke-width="1.2" fill="none" marker-end="url(#m2)"/>
+        <text x="150" y="70" font-size="9.5" fill="#5B6167">vTaskDelay() / waits on a queue</text>
+        <!-- Blocked -> Ready -->
+        <path d="M140,181 C200,215 260,235 300,255" stroke="#5B6167" stroke-width="1.2" fill="none" marker-end="url(#m2)"/>
+        <text x="150" y="225" font-size="9.5" fill="#5B6167">timeout, or the event arrives</text>
+
+        <!-- Running -> Suspended -->
+        <path d="M480,45 C570,55 630,85 655,125" stroke="#5B6167" stroke-width="1.2" fill="none" marker-end="url(#m2)"/>
+        <text x="500" y="70" font-size="9.5" fill="#5B6167">vTaskSuspend()</text>
+        <!-- Suspended -> Ready -->
+        <path d="M645,181 C580,215 520,235 480,255" stroke="#5B6167" stroke-width="1.2" fill="none" marker-end="url(#m2)"/>
+        <text x="520" y="225" font-size="9.5" fill="#5B6167">vTaskResume() - nothing else does it</text>
+
+        <text x="390" y="325" text-anchor="middle" font-size="10.5" fill="#9198A0">any state except Running can also be reached by vTaskSuspend() directly</text>
+      </g>
+    </svg>
+  </figure>
+
+  <h3>Lifecycle - birth to death, once each</h3>
+  <p>The state diagram above is the loop a task lives in. It sits inside a longer, one-way story: something creates the task, and eventually something deletes it.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 160" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="lc-t">
+      <title id="lc-t">Task lifecycle from creation to memory reclamation</title>
+      <defs><marker id="m3" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker></defs>
+      <g font-family="IBM Plex Mono, monospace" font-size="11.5">
+        <rect x="10" y="40" width="160" height="60" rx="7" fill="#fff" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="90" y="65" text-anchor="middle" font-weight="700">xTaskCreate()</text>
+        <text x="90" y="82" text-anchor="middle" font-size="9.5" fill="#5B6167">stack + TCB allocated</text>
+
+        <path d="M170,70 H235" stroke="#9198A0" stroke-width="1.2" marker-end="url(#m3)"/>
+
+        <rect x="235" y="20" width="530" height="100" rx="10" fill="#F3F4F0" stroke="#D8DAD3" stroke-dasharray="4,3"/>
+        <text x="500" y="38" text-anchor="middle" font-size="10" fill="#9198A0">the states-diagram loop above, repeated for as long as the task lives</text>
+        <rect x="270" y="55" width="460" height="50" rx="7" fill="#EAF1F8" stroke="#35618C" stroke-width="1.3"/>
+        <text x="500" y="85" text-anchor="middle" font-weight="700">Ready &#8646; Running &#8646; Blocked / Suspended</text>
+
+        <path d="M765,70 H830" stroke="#9198A0" stroke-width="1.2" marker-end="url(#m3)"/>
+
+        <rect x="830" y="40" width="160" height="60" rx="7" fill="#fff" stroke="#A05A2C" stroke-width="1.3"/>
+        <text x="910" y="60" text-anchor="middle" font-weight="700">vTaskDelete()</text>
+        <text x="910" y="76" text-anchor="middle" font-size="8.5" fill="#5B6167">by itself or another task</text>
+        <text x="910" y="90" text-anchor="middle" font-size="8.5" fill="#5B6167">Idle task frees memory later</text>
+      </g>
+    </svg>
+    <figcaption>A task can't free its own stack while standing on it - deletion just marks it gone; the Idle task does the actual cleanup the next time it runs.</figcaption>
+  </figure>
+
+  <h3>Types</h3>
+  <p>"Type" splits two ways in FreeRTOS - by how a task's memory was obtained, and by who created it.</p>
+
+  <table>
+    <thead><tr><th>By allocation</th><th>Dynamic</th><th>Static</th></tr></thead>
+    <tbody>
+      <tr><td>Call</td><td><code>xTaskCreate()</code></td><td><code>xTaskCreateStatic()</code></td></tr>
+      <tr><td>TCB and stack come from</td><td>the heap, via <code>pvPortMalloc()</code></td><td>buffers <em>you</em> declare and pass in</td></tr>
+      <tr><td>Needs</td><td>a heap implementation linked in (<code>heap_4.c</code>, etc.)</td><td><code>configSUPPORT_STATIC_ALLOCATION</code> - no heap needed at all</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th>By origin</th><th>Idle task</th><th>Timer service task</th><th>Application tasks</th></tr></thead>
+    <tbody>
+      <tr><td>Created by</td><td>the kernel, inside <code>vTaskStartScheduler()</code></td><td>the kernel, if <code>configUSE_TIMERS</code> is 1</td><td>you, explicitly</td></tr>
+      <tr><td>Priority</td><td>lowest - <code>tskIDLE_PRIORITY</code></td><td><code>configTIMER_TASK_PRIORITY</code></td><td>whatever you assign</td></tr>
+      <tr><td>Job</td><td>run when nothing else can; reclaim deleted tasks' memory</td><td>run software-timer callbacks</td><td>your <code>led_1s</code>, <code>led_2s</code>, <code>led_3s</code>, etc.</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ============================================================ -->
+  <h2 id="tcb"><span class="num">3</span>&nbsp; The Task Control Block</h2>
+  <p>Every fact the scheduler knows about a task lives in one struct - <code>TCB_t</code>, defined in <code>tasks.c</code>. It's small on purpose: a stack pointer, a couple of list links, a priority, a name.</p>
+
+  <figure>
+    <svg viewBox="0 0 980 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="tcb-t">
+      <title id="tcb-t">TCB_t fields and what they point at</title>
+      <defs><marker id="m4" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#35618C"/></marker></defs>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <rect x="20" y="10" width="380" height="290" rx="8" fill="#fff" stroke="#35618C" stroke-width="1.5"/>
+        <rect x="20" y="10" width="380" height="34" rx="8" fill="#35618C"/>
+        <text x="210" y="32" text-anchor="middle" fill="#fff" font-weight="700">TCB_t   (tasks.c)</text>
+
+        <g font-size="11.5">
+          <rect x="34" y="54" width="352" height="30" fill="#EAF1F8" stroke="#C9D9E6"/><text x="44" y="73">pxTopOfStack</text>
+          <rect x="34" y="84" width="352" height="30" fill="#fff" stroke="#C9D9E6"/><text x="44" y="103">xStateListItem</text>
+          <rect x="34" y="114" width="352" height="30" fill="#EAF1F8" stroke="#C9D9E6"/><text x="44" y="133">xEventListItem</text>
+          <rect x="34" y="144" width="352" height="30" fill="#fff" stroke="#C9D9E6"/><text x="44" y="163">uxPriority</text>
+          <rect x="34" y="174" width="352" height="30" fill="#EAF1F8" stroke="#C9D9E6"/><text x="44" y="193">uxBasePriority</text>
+          <rect x="34" y="204" width="352" height="30" fill="#fff" stroke="#C9D9E6"/><text x="44" y="223">pxStack</text>
+          <rect x="34" y="234" width="352" height="30" fill="#EAF1F8" stroke="#C9D9E6"/><text x="44" y="253">pcTaskName[configMAX_TASK_NAME_LEN]</text>
+        </g>
+        <text x="210" y="286" text-anchor="middle" font-size="9.5" fill="#5B6167">roughly 80-100 bytes, all told</text>
+
+        <!-- four callouts, ordered top-to-bottom to match their source rows - no connector ever has to cross another -->
+
+        <!-- pxTopOfStack (row y=69) -->
+        <path d="M386,69 C 500,69 500,44 620,44" stroke="#2E7D5B" stroke-width="1.3" fill="none" marker-end="url(#m4)"/>
+        <rect x="620" y="16" width="340" height="56" rx="7" fill="#E8F3ED" stroke="#2E7D5B"/>
+        <text x="790" y="38" text-anchor="middle" font-size="11" font-weight="700">this task's saved stack frame</text>
+        <text x="790" y="54" text-anchor="middle" font-size="9.5" fill="#5B6167">wherever the scheduler last left it</text>
+
+        <!-- xStateListItem (row y=99) -->
+        <path d="M386,99 C 500,99 500,112 620,112" stroke="#35618C" stroke-width="1.3" fill="none" marker-end="url(#m4)"/>
+        <rect x="620" y="84" width="340" height="56" rx="7" fill="#EAF1F8" stroke="#35618C"/>
+        <text x="790" y="106" text-anchor="middle" font-size="11" font-weight="700">whichever list matches its current state</text>
+        <text x="790" y="122" text-anchor="middle" font-size="9.5" fill="#5B6167">a ready list, the delayed list, or a queue's wait list</text>
+
+        <!-- uxPriority (row y=159) -->
+        <path d="M386,159 C 500,159 500,180 620,180" stroke="#6E5A96" stroke-width="1.3" fill="none" marker-end="url(#m4)"/>
+        <rect x="620" y="152" width="340" height="56" rx="7" fill="#EFEBF5" stroke="#6E5A96"/>
+        <text x="790" y="174" text-anchor="middle" font-size="11" font-weight="700">an index into pxReadyTasksLists[]</text>
+        <text x="790" y="190" text-anchor="middle" font-size="9.5" fill="#5B6167">0..N, and which array slot it's placed in</text>
+
+        <!-- pxStack (row y=219) -->
+        <path d="M386,219 C 500,219 500,248 620,248" stroke="#A05A2C" stroke-width="1.3" fill="none" marker-end="url(#m4)"/>
+        <rect x="620" y="220" width="340" height="56" rx="7" fill="#FAF0E6" stroke="#A05A2C"/>
+        <text x="790" y="242" text-anchor="middle" font-size="11" font-weight="700">the base of its stack memory</text>
+        <text x="790" y="258" text-anchor="middle" font-size="9.5" fill="#5B6167">used to check for overflow, if enabled</text>
+      </g>
+    </svg>
+    <figcaption>Every non-trivial FreeRTOS operation - creating, deleting, blocking, switching - boils down to reading or rewriting a handful of these fields.</figcaption>
+  </figure>
+
+  <p>Two of these are worth dwelling on. <code>pxTopOfStack</code> is a single pointer, yet it's the entire reason a context switch works at all - it's the address the next switch reads to know exactly where this task's registers were left. And <code>xStateListItem</code> is what makes "state" real: a task isn't Ready or Blocked because of a flag somewhere - it's Ready or Blocked because this list item is currently threaded into one linked list rather than another.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="sched"><span class="num">4</span>&nbsp; Task scheduling &amp; scheduling queues</h2>
+  <p>"Queue" here doesn't mean a FIFO - it means the actual data structure the scheduler walks to decide who runs next. FreeRTOS keeps one list per priority level, plus a separate list for anyone waiting on a timeout.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 430" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="q-t">
+      <title id="q-t">The ready-task lists array and the delayed-task list</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="20" font-weight="700" font-size="13">pxReadyTasksLists[configMAX_PRIORITIES]</text>
+        <text x="10" y="36" font-size="10.5" fill="#5B6167">one linked list per priority level - an array, indexed directly by priority number</text>
+
+        <!-- 5 priority rows, priority 4 (highest) at top -->
+        <g font-size="11">
+          <rect x="10" y="50" width="90" height="50" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.3"/>
+          <text x="55" y="70" text-anchor="middle" font-weight="700">[4]</text><text x="55" y="86" text-anchor="middle" font-size="9">highest</text>
+          <rect x="110" y="58" width="860" height="34" fill="none" stroke="#D8DAD3" stroke-dasharray="3,3"/>
+          <text x="130" y="80" fill="#9198A0" font-size="10">- empty right now -</text>
+
+          <rect x="10" y="108" width="90" height="50" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.3"/>
+          <text x="55" y="138" text-anchor="middle" font-weight="700">[3]</text>
+          <rect x="110" y="116" width="860" height="34" fill="none" stroke="#D8DAD3" stroke-dasharray="3,3"/>
+          <text x="130" y="138" fill="#9198A0" font-size="10">- empty right now -</text>
+
+          <rect x="10" y="166" width="90" height="50" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.5"/>
+          <text x="55" y="196" text-anchor="middle" font-weight="700">[2]</text>
+          <rect x="110" y="174" width="860" height="34" fill="#fff" stroke="#35618C" stroke-width="1.3"/>
+          <rect x="122" y="180" width="130" height="22" rx="4" fill="#fff" stroke="#35618C"/>
+          <text x="187" y="196" text-anchor="middle" font-size="10">-&gt; led_2s -&gt;</text>
+          <text x="270" y="196" font-size="9.5" fill="#5B6167">this is where the scheduler looks first</text>
+
+          <rect x="10" y="224" width="90" height="50" rx="6" fill="#EAF1F8" stroke="#35618C" stroke-width="1.3"/>
+          <text x="55" y="254" text-anchor="middle" font-weight="700">[1]</text>
+          <rect x="110" y="232" width="860" height="34" fill="none" stroke="#D8DAD3" stroke-dasharray="3,3"/>
+          <text x="130" y="254" fill="#9198A0" font-size="10">- empty right now -</text>
+
+          <rect x="10" y="282" width="90" height="50" rx="6" fill="#F3F4F0" stroke="#9198A0" stroke-width="1.3"/>
+          <text x="55" y="303" text-anchor="middle" font-weight="700">[0]</text><text x="55" y="319" text-anchor="middle" font-size="9">idle task</text>
+          <rect x="110" y="290" width="860" height="34" fill="#fff" stroke="#9198A0"/>
+          <text x="130" y="312" font-size="10" fill="#5B6167">-&gt; IDLE -&gt;  (always occupied - the floor of the system)</text>
+        </g>
+
+        <path d="M55,332 V352" stroke="#9198A0" stroke-width="1.1"/>
+        <line x1="10" y1="352" x2="970" y2="352" stroke="#D8DAD3" stroke-width="1"/>
+
+        <text x="10" y="378" font-weight="700" font-size="13">pxDelayedTaskList</text>
+        <text x="10" y="394" font-size="10.5" fill="#5B6167">a different list entirely - kept sorted by wake tick, not by priority</text>
+        <rect x="10" y="402" width="960" height="26" rx="5" fill="#FAF0E6" stroke="#A05A2C"/>
+        <text x="490" y="420" text-anchor="middle" font-size="10.5">... -&gt; led_1s (wakes soonest) -&gt; led_3s (wakes ~1.8s from now) -&gt; ...</text>
+      </g>
+    </svg>
+    <figcaption>A task moves between these lists constantly, but it's always in exactly one of them (Running is the special case - it's in a ready list too, just also currently executing).</figcaption>
+  </figure>
+
+  <p>The actual scheduling event is almost anticlimactic: a tick interrupt or a task blocking/waking pends a switch, that switch calls <code>vTaskSwitchContext()</code>, and that function's whole job is "find the highest-priority non-empty entry in <code>pxReadyTasksLists[]</code> and make it <code>pxCurrentTCB</code>." <em>How</em> it finds that entry quickly is its own topic - the next section.</p>
+
+  <!-- ============================================================ -->
+  <h2 id="algo"><span class="num">5</span>&nbsp; The scheduling algorithm</h2>
+  <p>Fixed-priority preemptive, full stop. The highest-priority Ready task always runs. A priority-9 task makes zero progress while any priority-10 task is Ready - there's no fairness mechanism, and none is wanted. Tasks that share a priority round-robin between each other via time-slicing, if <code>configUSE_TIME_SLICING</code> is on.</p>
+
+  <figure>
+    <svg viewBox="0 0 1000 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="algo-t">
+      <title id="algo-t">Selecting the next task via a priority bitmap</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="10" y="20" font-weight="700" font-size="13">finding "highest occupied priority" without searching</text>
+
+        <!-- bitmap -->
+        <text x="10" y="52" font-size="11" fill="#5B6167">one bit per priority level, set when that level has &#8805;1 ready task:</text>
+        <g font-size="12">
+          <rect x="10" y="64" width="60" height="34" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/><text x="40" y="86" text-anchor="middle" font-weight="700">1</text><text x="40" y="112" text-anchor="middle" font-size="9.5" fill="#5B6167">bit 4</text>
+          <rect x="70" y="64" width="60" height="34" fill="#F3F4F0" stroke="#D8DAD3"/><text x="100" y="86" text-anchor="middle">0</text><text x="100" y="112" text-anchor="middle" font-size="9.5" fill="#9198A0">bit 3</text>
+          <rect x="130" y="64" width="60" height="34" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/><text x="160" y="86" text-anchor="middle" font-weight="700">1</text><text x="160" y="112" text-anchor="middle" font-size="9.5" fill="#5B6167">bit 2</text>
+          <rect x="190" y="64" width="60" height="34" fill="#F3F4F0" stroke="#D8DAD3"/><text x="220" y="86" text-anchor="middle">0</text><text x="220" y="112" text-anchor="middle" font-size="9.5" fill="#9198A0">bit 1</text>
+          <rect x="250" y="64" width="60" height="34" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/><text x="280" y="86" text-anchor="middle" font-weight="700">1</text><text x="280" y="112" text-anchor="middle" font-size="9.5" fill="#5B6167">bit 0</text>
+        </g>
+        <path d="M40,98 V150" stroke="#35618C" stroke-width="1.3" stroke-dasharray="3,3"/>
+        <rect x="10" y="150" width="340" height="60" rx="7" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+        <text x="180" y="172" text-anchor="middle" font-size="11" font-weight="700">one CLZ (count-leading-zeros) instruction</text>
+        <text x="180" y="190" text-anchor="middle" font-size="10.5" fill="#2E7D5B">finds bit 4 directly - no loop, no search</text>
+        <text x="180" y="204" text-anchor="middle" font-size="9.5" fill="#5B6167">configUSE_PORT_OPTIMISED_TASK_SELECTION</text>
+
+        <path d="M350,180 H420" stroke="#9198A0" stroke-width="1.2" marker-end="url(#m5)"/>
+        <rect x="420" y="150" width="300" height="60" rx="7" fill="#fff" stroke="#1E2125" stroke-width="1.3"/>
+        <text x="570" y="172" text-anchor="middle" font-size="11" font-weight="700">O(1) selection</text>
+        <text x="570" y="190" text-anchor="middle" font-size="10" fill="#5B6167">same cost whether 1 task or 40 are ready</text>
+        <text x="570" y="204" text-anchor="middle" font-size="9.5" fill="#5B6167">a fixed, known bound - the whole point</text>
+
+        <!-- time slicing note -->
+        <rect x="750" y="150" width="240" height="90" rx="7" fill="#EFEBF5" stroke="#6E5A96" stroke-width="1.3"/>
+        <text x="870" y="172" text-anchor="middle" font-size="11" font-weight="700">equal-priority tasks?</text>
+        <text x="870" y="190" text-anchor="middle" font-size="10" fill="#5B6167">round-robin between them,</text>
+        <text x="870" y="204" text-anchor="middle" font-size="10" fill="#5B6167">one tick each, if time-slicing</text>
+        <text x="870" y="218" text-anchor="middle" font-size="10" fill="#5B6167">is enabled (it is, by default)</text>
+        <path d="M720,180 H750" stroke="#9198A0" stroke-width="1.1" stroke-dasharray="3,3"/>
+
+        <text x="10" y="255" font-size="11" fill="#9198A0">contrast this with Linux's CFS: a red-black tree ranked by</text>
+        <text x="10" y="271" font-size="11" fill="#9198A0">vruntime, chasing fairness across unrelated workloads. FreeRTOS never</text>
+        <text x="10" y="287" font-size="11" fill="#9198A0">has that goal - "most important thing runs" beats "everything gets a fair share."</text>
+      </g>
+      <defs><marker id="m5" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker></defs>
+    </svg>
+    <figcaption>The bitmap lives in a variable the port layer maintains as tasks enter and leave ready lists - it's kept in sync incrementally, never rebuilt from scratch.</figcaption>
+  </figure>
+
+  <p class="aside"><b>Where the actual switch happens.</b> None of this section moves a single register - it only decides <em>which</em> TCB becomes <code>pxCurrentTCB</code>. Loading that task's registers back onto the core is <code>PendSV_Handler</code>'s job, not the scheduler's - covered in the SysTick / PendSV / SVC notes.</p>
+
+  <div class="footline">FreeRTOS notes &middot; grounded in FreeRTOS-Kernel/tasks.c and portable/GCC/ARM_CM3/port.c</div>
+
+</article>
+</body>
+</html>

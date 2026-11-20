@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Where a task's context actually lives</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:      #FAFAF8;
+    --ink:     #1E2125;
+    --ink-soft:#5B6167;
+    --ink-dim: #9198A0;
+    --rule:    #E3E4DF;
+    --accent:  #35618C;
+    --accent-dim:#C9D9E6;
+    --run:     #2E7D5B;
+    --run-bg:  #E8F3ED;
+    --ready:   #35618C;
+    --ready-bg:#EAF1F8;
+    --block:   #A05A2C;
+    --block-bg:#FAF0E6;
+    --mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+    --sans: 'IBM Plex Sans', -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ink); font-family:var(--sans); font-size:17px; line-height:1.65; -webkit-font-smoothing:antialiased; }
+  article{ max-width:1080px; margin:0 auto; padding:60px 24px 100px; }
+  .byline{ font-family:var(--mono); font-size:12.5px; color:var(--ink-dim); margin:0 0 6px; }
+  h1{ font-size:32px; font-weight:700; line-height:1.25; margin:0 0 14px; letter-spacing:-.015em; }
+  .dek{ font-size:17.5px; color:var(--ink-soft); max-width:66ch; margin:0 0 36px; }
+  p{ max-width:70ch; margin:0 0 16px; }
+  code{ font-family:var(--mono); background:#EFEFE9; padding:.1em .35em; border-radius:3px; font-size:.87em; color:#3B3F45; }
+  h2{ font-size:21px; font-weight:700; margin:52px 0 8px; letter-spacing:-.01em; }
+  .sub{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); text-transform:uppercase; letter-spacing:.08em; margin:0 0 16px; }
+  hr.div{ border:none; border-top:1px solid var(--rule); margin:52px 0; }
+  figure{ margin:22px 0 6px; }
+  figure svg{ width:100%; height:auto; display:block; }
+  figcaption{ font-family:var(--mono); font-size:12px; color:var(--ink-dim); margin-top:10px; max-width:70ch; }
+  .legend{ display:flex; flex-wrap:wrap; margin:18px 0 30px; font-family:var(--mono); font-size:12px; color:var(--ink-soft); }
+  .legend span{ display:inline-flex; align-items:center; margin-right:26px; }
+  .legend i{ width:11px; height:11px; border-radius:3px; display:inline-block; margin-right:8px; }
+  .aside{ border-left:2px solid var(--accent-dim); padding-left:16px; margin:20px 0; font-size:15.5px; color:var(--ink-soft); }
+  .aside b{ color:var(--ink); font-weight:600; }
+  .footline{ margin-top:60px; padding-top:18px; border-top:1px solid var(--rule); font-family:var(--mono); font-size:11.5px; color:var(--ink-dim); }
+</style>
+</head>
+<body>
+<article>
+
+  <p class="byline">stm32f103 workspace notes</p>
+  <h1>Where a task's context actually lives</h1>
+  <p class="dek">A snapshot of your own three-thread-blink at one instant: <code>led_1s</code> is running, <code>led_2s</code> is ready, <code>led_3s</code> is asleep in <code>vTaskDelay()</code>. Same three tasks, three different answers to "where is this task's context right now."</p>
+
+  <div class="legend">
+    <span><i style="background:var(--run)"></i>running - context is live in the CPU</span>
+    <span><i style="background:var(--ready)"></i>ready - context saved, waiting for the CPU</span>
+    <span><i style="background:var(--block)"></i>blocked - context saved, waiting for a timeout</span>
+  </div>
+
+  <figure>
+    <svg viewBox="0 0 1040 860" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="hero">
+      <title id="hero">Diagram of CPU registers, three task stacks, TCBs, and the ready/delayed lists</title>
+      <defs>
+        <marker id="a1" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#9198A0"/></marker>
+        <marker id="a2" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#2E7D5B"/></marker>
+        <marker id="a3" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#35618C"/></marker>
+        <marker id="a4" markerWidth="7" markerHeight="7" refX="5" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 Z" fill="#A05A2C"/></marker>
+      </defs>
+      <g font-family="IBM Plex Mono, monospace">
+
+        <!-- CPU CORE -->
+        <rect x="300" y="4" width="440" height="118" rx="10" fill="#E8F3ED" stroke="#2E7D5B" stroke-width="1.4"/>
+        <text x="520" y="26" text-anchor="middle" font-size="12.5" font-weight="700" fill="#1E2125">CPU CORE - the register file</text>
+        <text x="520" y="41" text-anchor="middle" font-size="10.5" fill="#2E7D5B">belongs to whichever task is RUNNING - right now, led_1s</text>
+        <!-- register cells row 1 -->
+        <g font-size="10.5">
+          <!-- r0-r7 -->
+          <g>
+            <rect x="316" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="339" y="65" text-anchor="middle">r0</text>
+            <rect x="362" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="385" y="65" text-anchor="middle">r1</text>
+            <rect x="408" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="431" y="65" text-anchor="middle">r2</text>
+            <rect x="454" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="477" y="65" text-anchor="middle">r3</text>
+            <rect x="500" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="523" y="65" text-anchor="middle">r4</text>
+            <rect x="546" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="569" y="65" text-anchor="middle">r5</text>
+            <rect x="592" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="615" y="65" text-anchor="middle">r6</text>
+            <rect x="638" y="50" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="661" y="65" text-anchor="middle">r7</text>
+          </g>
+          <!-- r8-r12, lr, pc, xpsr -->
+          <g>
+            <rect x="316" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="339" y="91" text-anchor="middle">r8</text>
+            <rect x="362" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="385" y="91" text-anchor="middle">r9</text>
+            <rect x="408" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="431" y="91" text-anchor="middle">r10</text>
+            <rect x="454" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="477" y="91" text-anchor="middle">r11</text>
+            <rect x="500" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="523" y="91" text-anchor="middle">r12</text>
+            <rect x="546" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="569" y="91" text-anchor="middle">lr</text>
+            <rect x="592" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="615" y="91" text-anchor="middle">pc</text>
+            <rect x="638" y="76" width="46" height="22" fill="#fff" stroke="#2E7D5B"/><text x="661" y="91" text-anchor="middle">xpsr</text>
+          </g>
+          <rect x="684" y="50" width="40" height="48" fill="#fff" stroke="#2E7D5B" stroke-width="1.6"/>
+          <text x="704" y="70" text-anchor="middle" font-weight="700">sp</text>
+          <text x="704" y="83" text-anchor="middle" font-size="8.5">(psp)</text>
+        </g>
+        <text x="520" y="112" text-anchor="middle" font-size="10" fill="#5B6167">these 17 values ARE led_1s's context - not a copy of it, sitting nowhere else</text>
+
+        <!-- column headers + arrow from CPU to running stack -->
+        <path d="M420,122 L200,150" stroke="#2E7D5B" stroke-width="1.4" fill="none" marker-end="url(#a2)"/>
+
+        <!-- ===================== COLUMN 1: led_1s RUNNING ===================== -->
+        <g>
+          <rect x="20" y="150" width="320" height="26" rx="5" fill="#2E7D5B"/>
+          <text x="180" y="168" text-anchor="middle" fill="#fff" font-size="12.5" font-weight="700">led_1s - RUNNING</text>
+
+          <text x="30" y="196" font-size="9.5" fill="#9198A0">high addr (stack start)</text>
+          <rect x="20" y="200" width="320" height="330" fill="none" stroke="#D8DAD3" stroke-width="1.3"/>
+
+          <rect x="34" y="214" width="292" height="28" fill="#F3F4F0" stroke="#D8DAD3"/>
+          <text x="180" y="232" text-anchor="middle" font-size="10" fill="#5B6167">led_task() locals / call frame</text>
+          <rect x="34" y="246" width="292" height="28" fill="#F3F4F0" stroke="#D8DAD3"/>
+          <text x="180" y="264" text-anchor="middle" font-size="10" fill="#5B6167">gpio_output_init() - returned, stale</text>
+
+          <rect x="34" y="288" width="292" height="60" fill="none" stroke="#D8DAD3" stroke-width="1.2" stroke-dasharray="4,3"/>
+          <text x="180" y="312" text-anchor="middle" font-size="10.5" fill="#9198A0">no saved register frame here</text>
+          <text x="180" y="328" text-anchor="middle" font-size="10.5" fill="#9198A0">- nothing to save, it's still running</text>
+
+          <text x="30" y="546" font-size="9.5" fill="#9198A0">low addr (stack limit)</text>
+        </g>
+
+        <!-- ===================== COLUMN 2: led_2s READY ===================== -->
+        <g>
+          <rect x="360" y="150" width="320" height="26" rx="5" fill="#35618C"/>
+          <text x="520" y="168" text-anchor="middle" fill="#fff" font-size="12.5" font-weight="700">led_2s - READY</text>
+
+          <text x="370" y="196" font-size="9.5" fill="#9198A0">high addr (stack start)</text>
+          <rect x="360" y="200" width="320" height="330" fill="none" stroke="#D8DAD3" stroke-width="1.3"/>
+
+          <rect x="374" y="214" width="292" height="46" fill="#EAF1F8" stroke="#35618C" stroke-width="1.3"/>
+          <text x="520" y="232" text-anchor="middle" font-size="10.2" font-weight="600" fill="#1E2125">hardware frame</text>
+          <text x="520" y="247" text-anchor="middle" font-size="9.2" fill="#35618C">r0-r3, r12, lr, pc, xpsr</text>
+
+          <rect x="374" y="264" width="292" height="46" fill="#EAF1F8" stroke="#35618C" stroke-width="1.3"/>
+          <text x="520" y="282" text-anchor="middle" font-size="10.2" font-weight="600" fill="#1E2125">software frame</text>
+          <text x="520" y="297" text-anchor="middle" font-size="9.2" fill="#35618C">r4 - r11 (pushed by PendSV)</text>
+
+          <path d="M374,310 h-14" stroke="#35618C" stroke-width="1.3" marker-end="url(#a3)"/>
+          <text x="345" y="314" text-anchor="end" font-size="9.5" fill="#35618C" font-weight="600">SP</text>
+
+          <rect x="374" y="326" width="292" height="34" fill="#F3F4F0" stroke="#D8DAD3"/>
+          <text x="520" y="347" text-anchor="middle" font-size="10" fill="#5B6167">rest of stack, untouched below this</text>
+
+          <text x="370" y="546" font-size="9.5" fill="#9198A0">low addr (stack limit)</text>
+        </g>
+
+        <!-- ===================== COLUMN 3: led_3s BLOCKED ===================== -->
+        <g>
+          <rect x="700" y="150" width="320" height="26" rx="5" fill="#A05A2C"/>
+          <text x="860" y="168" text-anchor="middle" fill="#fff" font-size="12.5" font-weight="700">led_3s - BLOCKED (asleep)</text>
+
+          <text x="710" y="196" font-size="9.5" fill="#9198A0">high addr (stack start)</text>
+          <rect x="700" y="200" width="320" height="330" fill="none" stroke="#D8DAD3" stroke-width="1.3"/>
+
+          <rect x="714" y="214" width="292" height="46" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.3"/>
+          <text x="860" y="232" text-anchor="middle" font-size="10.2" font-weight="600" fill="#1E2125">hardware frame</text>
+          <text x="860" y="247" text-anchor="middle" font-size="9.2" fill="#A05A2C">r0-r3, r12, lr, pc, xpsr</text>
+
+          <rect x="714" y="264" width="292" height="46" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.3"/>
+          <text x="860" y="282" text-anchor="middle" font-size="10.2" font-weight="600" fill="#1E2125">software frame</text>
+          <text x="860" y="297" text-anchor="middle" font-size="9.2" fill="#A05A2C">r4 - r11 (pushed by PendSV)</text>
+
+          <path d="M714,310 h-14" stroke="#A05A2C" stroke-width="1.3" marker-end="url(#a4)"/>
+          <text x="685" y="314" text-anchor="end" font-size="9.5" fill="#A05A2C" font-weight="600">SP</text>
+
+          <rect x="714" y="326" width="292" height="34" fill="#F3F4F0" stroke="#D8DAD3"/>
+          <text x="860" y="347" text-anchor="middle" font-size="10" fill="#5B6167">rest of stack, untouched below this</text>
+
+          <text x="710" y="546" font-size="9.5" fill="#9198A0">low addr (stack limit)</text>
+        </g>
+
+        <text x="520" y="590" text-anchor="middle" font-size="11" fill="#5B6167" font-style="italic">ready and blocked are stored identically - same frame shape, same mechanism. only the list below differs.</text>
+
+        <!-- ===================== TCBs ===================== -->
+        <g>
+          <rect x="60" y="612" width="240" height="72" rx="7" fill="#fff" stroke="#2E7D5B" stroke-width="1.4"/>
+          <text x="180" y="632" text-anchor="middle" font-size="11" font-weight="700">TCB: led_1s</text>
+          <text x="180" y="648" text-anchor="middle" font-size="9.5" fill="#5B6167">pxTopOfStack: stale</text>
+          <text x="180" y="661" text-anchor="middle" font-size="9.5" fill="#5B6167">(updated on next switch-out)</text>
+          <text x="180" y="676" text-anchor="middle" font-size="9.5" fill="#2E7D5B" font-weight="600">pxCurrentTCB -&gt; here</text>
+
+          <rect x="400" y="612" width="240" height="72" rx="7" fill="#fff" stroke="#35618C" stroke-width="1.4"/>
+          <text x="520" y="632" text-anchor="middle" font-size="11" font-weight="700">TCB: led_2s</text>
+          <text x="520" y="648" text-anchor="middle" font-size="9.5" fill="#5B6167">pxTopOfStack -&gt; SP above</text>
+          <text x="520" y="663" text-anchor="middle" font-size="9.5" fill="#5B6167">xStateListItem -&gt;</text>
+
+          <rect x="740" y="612" width="240" height="72" rx="7" fill="#fff" stroke="#A05A2C" stroke-width="1.4"/>
+          <text x="860" y="632" text-anchor="middle" font-size="11" font-weight="700">TCB: led_3s</text>
+          <text x="860" y="648" text-anchor="middle" font-size="9.5" fill="#5B6167">pxTopOfStack -&gt; SP above</text>
+          <text x="860" y="663" text-anchor="middle" font-size="9.5" fill="#5B6167">xStateListItem -&gt;</text>
+        </g>
+
+        <!-- arrows: TCB pxTopOfStack up to SP arrows (col2/3) -->
+        <path d="M520,612 V366" stroke="#35618C" stroke-width="1.1" stroke-dasharray="3,3" fill="none"/>
+        <path d="M860,612 V366" stroke="#A05A2C" stroke-width="1.1" stroke-dasharray="3,3" fill="none"/>
+        <path d="M180,612 V366" stroke="#2E7D5B" stroke-width="1.1" stroke-dasharray="3,3" fill="none"/>
+
+        <!-- pxCurrentTCB external label pointing at led_1s TCB -->
+        <path d="M60,700 h-40" stroke="#2E7D5B" stroke-width="1.2" marker-end="url(#a2)" transform="translate(0,-52)"/>
+
+        <!-- ===================== LISTS ===================== -->
+        <g>
+          <rect x="400" y="720" width="240" height="110" rx="8" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/>
+          <text x="520" y="742" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1E2125">pxReadyTasksLists[1]</text>
+          <text x="520" y="757" text-anchor="middle" font-size="9" fill="#35618C">doubly-linked list, this priority level</text>
+          <rect x="418" y="770" width="204" height="30" rx="5" fill="#fff" stroke="#35618C"/>
+          <text x="520" y="789" text-anchor="middle" font-size="10">-&gt; led_2s -&gt;</text>
+          <text x="520" y="815" text-anchor="middle" font-size="9.5" fill="#5B6167">scheduler picks from here</text>
+
+          <rect x="740" y="720" width="240" height="110" rx="8" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+          <text x="860" y="742" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1E2125">pxDelayedTaskList</text>
+          <text x="860" y="757" text-anchor="middle" font-size="9" fill="#A05A2C">sorted by wake tick</text>
+          <rect x="758" y="770" width="204" height="30" rx="5" fill="#fff" stroke="#A05A2C"/>
+          <text x="860" y="789" text-anchor="middle" font-size="10">-&gt; led_3s (wakes in ~1.8s) -&gt;</text>
+          <text x="860" y="815" text-anchor="middle" font-size="9.5" fill="#5B6167">xTaskIncrementTick() checks here</text>
+        </g>
+
+        <path d="M520,684 V720" stroke="#35618C" stroke-width="1.3" marker-end="url(#a3)"/>
+        <path d="M860,684 V720" stroke="#A05A2C" stroke-width="1.3" marker-end="url(#a4)"/>
+      </g>
+    </svg>
+    <figcaption>A running task's context is the CPU's registers, full stop - nothing is copied anywhere while it runs. A non-running task's context is a frozen snapshot sitting on its own stack, found via <code>TCB-&gt;pxTopOfStack</code>. Ready vs. blocked is not a difference in <em>how</em> the context is stored - it's only a difference in which list the TCB is threaded into.</figcaption>
+  </figure>
+
+  <hr class="div">
+
+  <h2>What's actually inside a saved frame</h2>
+  <p class="sub">the eight-plus-eight words behind led_2s's SP</p>
+  <p>Zooming into one of those "software frame / hardware frame" blocks from above - this is the literal word-by-word memory layout, in the exact order <code>PendSV_Handler</code> pushes and pops it.</p>
+
+  <figure>
+    <svg viewBox="0 0 620 460" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="zoom">
+      <title id="zoom">Word-by-word layout of a saved task context frame on the stack</title>
+      <g font-family="IBM Plex Mono, monospace" font-size="12">
+        <text x="20" y="24" font-size="11" fill="#9198A0">higher address</text>
+
+        <!-- hardware frame -->
+        <rect x="20" y="34" width="380" height="216" fill="#EAF1F8" stroke="#35618C" stroke-width="1.4"/>
+        <text x="410" y="46" font-size="10.5" fill="#35618C">pushed automatically</text>
+        <text x="410" y="60" font-size="10.5" fill="#35618C">by hardware, on the way</text>
+        <text x="410" y="74" font-size="10.5" fill="#35618C">into ANY exception</text>
+        <g font-size="12">
+          <rect x="20" y="34" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="53">xPSR</text>
+          <rect x="20" y="61" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="80">PC</text><text x="380" y="80" text-anchor="end" font-size="10" fill="#5B6167">return address</text>
+          <rect x="20" y="88" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="107">LR</text>
+          <rect x="20" y="115" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="134">R12</text>
+          <rect x="20" y="142" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="161">R3</text>
+          <rect x="20" y="169" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="188">R2</text>
+          <rect x="20" y="196" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="215">R1</text>
+          <rect x="20" y="223" width="380" height="27" fill="none" stroke="#35618C"/><text x="35" y="242">R0</text>
+        </g>
+
+        <!-- software frame -->
+        <rect x="20" y="250" width="380" height="216" fill="#FAF0E6" stroke="#A05A2C" stroke-width="1.4"/>
+        <text x="410" y="262" font-size="10.5" fill="#A05A2C">pushed by hand, in</text>
+        <text x="410" y="276" font-size="10.5" fill="#A05A2C">PendSV_Handler's own</text>
+        <text x="410" y="290" font-size="10.5" fill="#A05A2C">"stmdb r0!, {r4-r11}"</text>
+        <g font-size="12">
+          <rect x="20" y="250" width="380" height="27" fill="none" stroke="#A05A2C"/><text x="35" y="269">R11</text>
+          <rect x="20" y="277" width="380" height="27" fill="none" stroke="#A05A2C"/><text x="35" y="296">R10</text>
+          <rect x="20" y="304" width="380" height="27" fill="none" stroke="#A05A2C"/><text x="35" y="323">R9</text>
+          <rect x="20" y="331" width="380" height="27" fill="none" stroke="#A05A2C"/><text x="35" y="350">R8</text>
+          <rect x="20" y="358" width="380" height="27" fill="none" stroke="#A05A2C"/><text x="35" y="377">R7</text>
+          <rect x="20" y="385" width="380" height="27" fill="none" stroke="#A05A2C"/><text x="35" y="404">R6</text>
+          <rect x="20" y="412" width="380" height="27" fill="none" stroke="#A05A2C"/><text x="35" y="431">R5</text>
+          <rect x="20" y="439" width="380" height="27" fill="none" stroke="#A05A2C" stroke-width="1.6"/><text x="35" y="458">R4</text>
+        </g>
+
+        <path d="M400,452 h30" stroke="#1E2125" stroke-width="1.4" marker-end="url(#a1)"/>
+        <text x="440" y="443" font-size="11.5" font-weight="700" fill="#1E2125">SP</text>
+        <text x="440" y="457" font-size="9.5" fill="#5B6167">= TCB-&gt;pxTopOfStack</text>
+
+        <text x="20" y="479" font-size="11" fill="#9198A0">lower address - this end grows as more gets pushed</text>
+      </g>
+    </svg>
+    <figcaption>16 words, roughly 64 bytes - that's an entire task's execution state, in full, sitting quietly in RAM until the scheduler decides it's this task's turn again.</figcaption>
+  </figure>
+
+  <hr class="div">
+
+  <h2>Same mechanism, different list</h2>
+  <p>The one thing worth saying twice: <code>led_2s</code> and <code>led_3s</code> have <em>identical</em> saved frames above - same shape, same fields, same mechanism. Nothing about either stack tells you which one is ready and which is sleeping. Look back at the two boxes at the bottom of the first diagram - that distinction lives entirely in which linked list the TCB is threaded into, nowhere else.</p>
+
+  <p class="aside"><b>The wake-up path.</b> Every SysTick, <code>xTaskIncrementTick()</code> checks the head of <code>pxDelayedTaskList</code> - it's kept sorted by wake time, so it only ever has to look at the front. When <code>led_3s</code>'s tick arrives, it's unlinked from the delayed list and relinked into <code>pxReadyTasksLists[]</code> - nothing about its saved stack frame changes in that move. It becomes eligible to run again purely by changing which list it's in.</p>
+
+  <div class="footline">stm32f103 workspace notes &middot; continues from the SysTick / PendSV / SVC notes</div>
+
+</article>
+</body>
+</html>
