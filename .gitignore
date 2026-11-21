@@ -36,3 +36,5 @@ Thumbs.db
 03-stm32f103/FreeRTOS
 
 notes/others
+
+/practice/pthreads/compiled
