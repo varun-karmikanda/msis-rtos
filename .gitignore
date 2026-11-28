@@ -1,14 +1,38 @@
 # Build outputs
 *.o
+*.obj
 *.d
+*.a
+*.lib
+*.so
+*.dll
+*.class
+*.pyc
+*.pyo
 *.elf
+*.axf
 *.bin
 *.hex
+*.srec
+*.mot
 *.map
 *.exe
 *.out
+*.pdb
+*.ilk
 build/
 dist/
+
+# Extensionless compiled executables
+os/misc/lab/curdir
+os/misc/lab/hello_world
+os/misc/lab/max
+os/misc/lab_max/hello
+os/misc/lab_max/main
+os/misc/lab_max/pwd
+os/misc/max
+os/misc/p01-family-tree
+os/misc/p02-binary-tree
 
 # Linux exercise executables
 04-process-management/**/basic_fork
@@ -38,3 +62,5 @@ Thumbs.db
 notes/others
 
 /practice/pthreads/compiled
+
+/
