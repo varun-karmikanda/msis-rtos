@@ -1,0 +1,40 @@
+// Acquire mutexes in the same order.
+
+void task1(void *pvParameters)
+{
+    while (1)
+    {
+        xSemaphoreTake(mutex_A, portMAX_DELAY);
+        xSemaphoreTake(mutex_B, portMAX_DELAY);
+
+        /* Critical section */
+
+        xSemaphoreGive(mutex_B);
+        xSemaphoreGive(mutex_A);
+    }
+}
+
+void task2(void *pvParameters)
+{
+    while (1)
+    {
+        xSemaphoreTake(mutex_A, portMAX_DELAY);
+        xSemaphoreTake(mutex_B, portMAX_DELAY);
+
+        /* Critical section */
+
+        xSemaphoreGive(mutex_B);
+        xSemaphoreGive(mutex_A);
+    }
+}
+
+
+// Use timeout
+
+if (xSemaphoreTake(mutex_B, pdMS_TO_TICKS(500)) == pdPASS)
+{
+    /* Critical section */
+    xSemaphoreGive(mutex_B);
+}
+
+xSemaphoreGive(mutex_A);
